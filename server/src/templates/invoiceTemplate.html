@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice {{invoiceNumber}}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: {{theme.background}};
+      color: {{theme.foreground}};
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 40px;
+      padding-bottom: 30px;
+      border-bottom: 2px solid {{theme.border}};
+    }
+
+    .logo-section {
+      flex: 1;
+    }
+
+    .invoice-info {
+      text-align: right;
+      flex: 1;
+    }
+
+    .invoice-title {
+      font-size: 32px;
+      font-weight: 700;
+      color: {{theme.accent}};
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: -0.5px;
+    }
+
+    .invoice-number {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+
+    .invoice-date {
+      color: {{theme.muted}};
+      font-size: 14px;
+    }
+
+    .parties {
+      display: flex;
+      gap: 40px;
+      margin-bottom: 40px;
+    }
+
+    .party {
+      flex: 1;
+      background-color: {{theme.cardBg}};
+      padding: 25px;
+      border-radius: 12px;
+      border: 1px solid {{theme.border}};
+    }
+
+    .party-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: {{theme.muted}};
+      margin-bottom: 15px;
+    }
+
+    .party-name {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: {{theme.foreground}};
+    }
+
+    .party-details {
+      color: {{theme.muted}};
+      font-size: 13px;
+      line-height: 1.8;
+    }
+
+    .invoice-meta {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+    }
+
+    .meta-item {
+      background-color: {{theme.cardBg}};
+      padding: 15px 20px;
+      border-radius: 8px;
+      border: 1px solid {{theme.border}};
+      flex: 1;
+      min-width: 150px;
+    }
+
+    .meta-label {
+      font-size: 11px;
+      color: {{theme.muted}};
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 5px;
+    }
+
+    .meta-value {
+      font-size: 16px;
+      font-weight: 600;
+      color: {{theme.foreground}};
+    }
+
+    .items-table {
+      width: 100%;
+      margin-bottom: 40px;
+      border-collapse: collapse;
+    }
+
+    .items-table th {
+      background-color: {{theme.cardBg}};
+      padding: 15px 12px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: {{theme.muted}};
+      border-bottom: 2px solid {{theme.border}};
+    }
+
+    .items-table th:last-child,
+    .items-table td:last-child {
+      text-align: right;
+    }
+
+    .items-table td {
+      padding: 12px;
+      border-bottom: 1px solid {{theme.border}};
+      color: {{theme.foreground}};
+    }
+
+    .totals {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 40px;
+    }
+
+    .totals-box {
+      width: 350px;
+      background-color: {{theme.cardBg}};
+      padding: 25px;
+      border-radius: 12px;
+      border: 1px solid {{theme.border}};
+    }
+
+    .total-line {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      color: {{theme.muted}};
+      font-size: 14px;
+    }
+
+    .total-line.grand-total {
+      border-top: 2px solid {{theme.border}};
+      margin-top: 10px;
+      padding-top: 15px;
+      font-size: 20px;
+      font-weight: 700;
+      color: {{theme.foreground}};
+    }
+
+    .vat-regulation {
+      background-color: {{theme.cardBg}};
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid {{theme.border}};
+      margin-bottom: 30px;
+      font-size: 13px;
+      color: {{theme.muted}};
+    }
+
+    .vat-regulation-title {
+      font-weight: 600;
+      margin-bottom: 5px;
+      color: {{theme.foreground}};
+    }
+
+    .notes {
+      background-color: {{theme.cardBg}};
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid {{theme.border}};
+      margin-bottom: 40px;
+      font-size: 13px;
+      color: {{theme.foreground}};
+    }
+
+    .notes-title {
+      font-weight: 600;
+      margin-bottom: 10px;
+      color: {{theme.foreground}};
+    }
+
+    .footer {
+      text-align: center;
+      padding-top: 40px;
+      border-top: 1px solid {{theme.border}};
+      color: {{theme.muted}};
+      font-size: 12px;
+    }
+
+    @media print {
+      body {
+        background-color: white;
+      }
+      .container {
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo-section">
+        <div class="invoice-title">INVOICE</div>
+        <div style="color: {{theme.muted}}; font-size: 12px;">Professional Services Invoice</div>
+      </div>
+      <div class="invoice-info">
+        <div class="invoice-number">#{{invoiceNumber}}</div>
+        <div class="invoice-date">Issue Date: {{issueDate}}</div>
+        <div class="invoice-date">Due Date: {{dueDate}}</div>
+      </div>
+    </div>
+
+    <!-- Parties -->
+    <div class="parties">
+      <div class="party">
+        <div class="party-title">From</div>
+        <div class="party-name">{{issuer.name}}</div>
+        <div class="party-details">
+          VAT: {{issuer.afm}}<br>
+          Tax Office: {{issuer.doy}}<br>
+          {{issuer.address}}
+        </div>
+      </div>
+      <div class="party">
+        <div class="party-title">Bill To</div>
+        <div class="party-name">{{counterpart.name}}</div>
+        <div class="party-details">
+          VAT: {{counterpart.afm}}<br>
+          {{counterpart.address}}
+        </div>
+      </div>
+    </div>
+
+    <!-- Invoice Meta -->
+    <div class="invoice-meta">
+      <div class="meta-item">
+        <div class="meta-label">Series</div>
+        <div class="meta-value">{{series}}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Currency</div>
+        <div class="meta-value">{{currency}}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Payment Terms</div>
+        <div class="meta-value">Net 30</div>
+      </div>
+    </div>
+
+    <!-- Items Table -->
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th style="width: 5%;">#</th>
+          <th style="width: 35%;">Description</th>
+          <th style="width: 10%; text-align: center;">Qty</th>
+          <th style="width: 10%; text-align: center;">Unit</th>
+          <th style="width: 15%; text-align: right;">Price</th>
+          <th style="width: 10%; text-align: center;">VAT</th>
+          <th style="width: 15%;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{invoiceItems}}
+      </tbody>
+    </table>
+
+    <!-- Totals -->
+    <div class="totals">
+      <div class="totals-box">
+        <div class="total-line">
+          <span>Net Total</span>
+          <span>€{{totalNetValue}}</span>
+        </div>
+        <div class="total-line">
+          <span>VAT Total</span>
+          <span>€{{totalVatAmount}}</span>
+        </div>
+        <div class="total-line grand-total">
+          <span>Total Amount</span>
+          <span>€{{totalAmount}}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- VAT Regulation -->
+    <div class="vat-regulation">
+      <div class="vat-regulation-title">VAT Regulation</div>
+      {{vatRegulation}}
+    </div>
+
+    <!-- Notes -->
+    <div class="notes" style="display: {{notesDisplay}}">
+      <div class="notes-title">Notes</div>
+      {{notes}}
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>Thank you for your business</p>
+      <p style="margin-top: 10px;">Generated with Accounty - Professional Invoicing Software</p>
+    </div>
+  </div>
+</body>
+</html>
