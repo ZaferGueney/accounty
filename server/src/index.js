@@ -11,6 +11,7 @@ const userRoutes = require('./routes/userRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const kadRoutes = require('./routes/kadRoutes');
 const customerRoutes = require('./routes/customerRoutes');
+const clientRoutes = require('./routes/clientRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
 
 const app = express();
@@ -72,6 +73,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/kads', kadRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/clients', clientRoutes);
 app.use('/api/invoices', invoiceRoutes);
 
 // Basic health check route

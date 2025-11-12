@@ -687,6 +687,54 @@ const getCurrentUser = async (req, res) => {
   }
 };
 
+// @desc    Update account type (accountant mode)
+// @route   PUT /api/users/account-type
+// @access  Private
+const updateAccountType = async (req, res) => {
+  try {
+    const { isAccountant } = req.body;
+
+    if (typeof isAccountant !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'isAccountant must be a boolean value'
+      });
+    }
+
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Update account type
+    user.isAccountant = isAccountant;
+    await user.save();
+
+    // Clear user cache to force refresh
+    await redisUtils.deleteUserCache(req.user.userId);
+
+    // Get fresh user data with virtual fields
+    const updatedUser = user.toJSON();
+    delete updatedUser.password;
+
+    res.json({
+      success: true,
+      message: 'Account type updated successfully',
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error('Update account type error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -696,6 +744,7 @@ module.exports = {
   changePassword,
   updateEmail,
   updateNames,
+  updateAccountType,
   deleteAccount,
   refreshToken,
   logoutUser,

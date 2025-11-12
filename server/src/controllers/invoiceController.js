@@ -1,5 +1,6 @@
 const Invoice = require('../models/invoiceModel');
 const Customer = require('../models/customerModel');
+const Client = require('../models/clientModel');
 const Settings = require('../models/settingsModel');
 const pdfService = require('../services/pdfService');
 const path = require('path');
@@ -118,7 +119,7 @@ const createInvoice = async (req, res) => {
 
     // Get user settings for issuer info
     const settings = await Settings.findOne({ userId });
-    if (!settings?.taxSettings?.afm) {
+    if (!settings?.tax?.afm) {
       return res.status(400).json({
         success: false,
         message: 'Please complete your tax settings before creating invoices'
@@ -148,23 +149,43 @@ const createInvoice = async (req, res) => {
 
     // Build issuer info from settings
     const issuer = {
-      vatNumber: settings.taxSettings.afm,
+      vatNumber: settings.tax.afm,
       country: 'GR',
       branch: 0,
-      name: settings.businessSettings?.name || `${req.user.firstName} ${req.user.lastName}`,
+      name: settings.business?.legalName || settings.business?.tradingName || `${req.user.firstName} ${req.user.lastName}`,
       address: {
-        street: settings.businessSettings?.address?.street,
-        number: settings.businessSettings?.address?.number,
-        postalCode: settings.businessSettings?.address?.postalCode,
-        city: settings.businessSettings?.address?.city,
-        prefecture: settings.businessSettings?.address?.prefecture,
+        street: settings.address?.street,
+        number: settings.address?.number,
+        postalCode: settings.address?.postalCode,
+        city: settings.address?.city,
+        prefecture: settings.address?.prefecture,
         country: 'GR'
       },
       taxInfo: {
-        afm: settings.taxSettings.afm,
-        doy: settings.taxSettings.doy
+        afm: settings.tax.afm,
+        doy: settings.tax.doy
       }
     };
+
+    // For drafts, ensure line items have default values
+    if (invoiceData.status === 'draft' || !invoiceData.status) {
+      invoiceData.invoiceDetails = (invoiceData.invoiceDetails || []).map(detail => ({
+        ...detail,
+        description: detail.description || '',
+        unitPrice: detail.unitPrice || 0,
+        netValue: detail.netValue || 0,
+        vatAmount: detail.vatAmount || 0
+      }));
+      
+      // Ensure counterpart has at least empty values for draft
+      if (!invoiceData.counterpart?.name) {
+        invoiceData.counterpart = {
+          ...invoiceData.counterpart,
+          name: ''
+        };
+      }
+    }
+
 
     // Create invoice
     const invoice = await Invoice.create({
@@ -172,7 +193,7 @@ const createInvoice = async (req, res) => {
       userId,
       invoiceNumber,
       issuer,
-      status: 'draft'
+      status: invoiceData.status || 'draft'
     });
 
     // Populate references
@@ -231,10 +252,19 @@ const updateInvoice = async (req, res) => {
 
     // If changing status to sent, validate invoice is complete
     if (req.body.status === 'sent' && invoice.status === 'draft') {
-      if (!invoice.counterpart || invoice.invoiceDetails.length === 0) {
+      if (!invoice.counterpart?.name || invoice.invoiceDetails.length === 0) {
         return res.status(400).json({
           success: false,
           message: 'Invoice must have recipient and line items before sending'
+        });
+      }
+      
+      // Validate all line items have descriptions and prices
+      const invalidLines = invoice.invoiceDetails.filter(line => !line.description || line.unitPrice === 0);
+      if (invalidLines.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'All invoice lines must have descriptions and prices before sending'
         });
       }
     }
@@ -411,19 +441,38 @@ const getNextInvoiceNumber = async (req, res) => {
 // @access  Private
 const previewInvoice = async (req, res) => {
   try {
+    console.log('📄 Starting PDF preview generation...');
     const userId = req.user.userId;
     const invoiceData = req.body;
     const theme = req.query.theme || 'light';
 
+    console.log('📋 Invoice data received:', {
+      userId,
+      theme,
+      hasInvoiceData: !!invoiceData,
+      invoiceNumber: invoiceData?.invoiceNumber,
+      counterpartName: invoiceData?.counterpart?.name,
+      itemsCount: invoiceData?.invoiceDetails?.length || 0,
+      totalsPresent: !!invoiceData?.totals
+    });
+
     // Get user settings for issuer info if not provided
     if (!invoiceData.issuer) {
+      console.log('🔍 No issuer data provided, fetching from settings...');
       const settings = await Settings.findOne({ userId });
       if (!settings?.tax?.afm) {
+        console.error('❌ No tax settings found for user');
         return res.status(400).json({
           success: false,
           message: 'Please complete your tax settings before previewing invoices'
         });
       }
+
+      console.log('✅ Settings found, building issuer info:', {
+        afm: settings.tax.afm,
+        businessName: settings.business?.legalName || settings.business?.tradingName,
+        hasAddress: !!settings.address
+      });
 
       invoiceData.issuer = {
         vatNumber: settings.tax.afm,
@@ -440,7 +489,7 @@ const previewInvoice = async (req, res) => {
         },
         taxInfo: {
           afm: settings.tax.afm,
-          doy: settings.tax.taxOffice
+          doy: settings.tax.doy
         }
       };
     }
@@ -448,22 +497,33 @@ const previewInvoice = async (req, res) => {
     // Generate temporary invoice number for preview
     if (!invoiceData.invoiceNumber) {
       invoiceData.invoiceNumber = 'DRAFT-' + Date.now();
+      console.log('🔢 Generated temporary invoice number:', invoiceData.invoiceNumber);
     }
 
-    // Generate PDF
-    const pdf = await pdfService.generateInvoicePDF(invoiceData, theme);
-
-    // Set response headers
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="invoice-preview-${invoiceData.invoiceNumber}.pdf"`,
-      'Content-Length': pdf.length
+    console.log('🔄 Calling PDF service to generate PDF...');
+    // Generate PDF using the PDF service
+    const pdfBuffer = await pdfService.generateInvoicePDF(invoiceData, theme);
+    
+    console.log('✅ PDF generated successfully:', {
+      bufferSize: pdfBuffer.length,
+      sizeInKB: Math.round(pdfBuffer.length / 1024)
     });
-
-    // Send PDF
-    res.send(pdf);
+    
+    // Set headers for PDF response
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="invoice-${invoiceData.invoiceNumber || 'draft'}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    // Send PDF buffer
+    res.send(pdfBuffer);
+    console.log('📨 PDF sent to client successfully');
   } catch (error) {
-    console.error('Preview invoice error:', error);
+    console.error('💥 Preview invoice error:', {
+      message: error.message,
+      stack: error.stack,
+      userId: req.user?.userId,
+      invoiceNumber: req.body?.invoiceNumber
+    });
     res.status(500).json({
       success: false,
       message: 'Failed to preview invoice',

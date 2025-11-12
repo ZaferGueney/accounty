@@ -28,6 +28,10 @@ const AccountSettings = () => {
     confirmPassword: ''
   });
 
+  const [accountTypeData, setAccountTypeData] = useState({
+    isAccountant: user?.isAccountant || false
+  });
+
 
   const api = axios.create({
     baseURL: getApiBaseUrl()
@@ -107,11 +111,31 @@ const AccountSettings = () => {
     }
   };
 
+  const handleUpdateAccountType = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    try {
+      const response = await api.put('/api/users/account-type', {
+        isAccountant: accountTypeData.isAccountant
+      });
+      if (response.data.success) {
+        showMessage('success', 'Account type updated successfully');
+        refreshUser();
+      }
+    } catch (error: any) {
+      showMessage('error', error.response?.data?.message || 'Failed to update account type');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
 
   const tabs = [
     { key: 'profile', title: 'Name', icon: '👤' },
     { key: 'email', title: 'Email', icon: '📧' },
-    { key: 'password', title: 'Password', icon: '🔒' }
+    { key: 'password', title: 'Password', icon: '🔒' },
+    { key: 'accountType', title: 'Account Type', icon: '💼' }
   ];
 
   const renderTabContent = () => {
@@ -254,6 +278,69 @@ const AccountSettings = () => {
           </form>
         );
 
+      case 'accountType':
+        return (
+          <form onSubmit={handleUpdateAccountType} className="space-y-6">
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                <strong>Current account type:</strong> {user?.isAccountant ? 'Accountant' : 'Individual User'}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-800 dark:text-white mb-4">
+                Account Type
+              </label>
+              <div className="space-y-3">
+                <label className="flex items-center space-x-3 p-4 border border-gray-300/50 dark:border-slate-600/50 rounded-xl cursor-pointer hover:bg-gray-50/50 dark:hover:bg-slate-700/50 transition-all">
+                  <input
+                    type="radio"
+                    name="accountType"
+                    value="individual"
+                    checked={!accountTypeData.isAccountant}
+                    onChange={() => setAccountTypeData(prev => ({ ...prev, isAccountant: false }))}
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-slate-800 dark:text-white">👤 Individual User</div>
+                    <div className="text-xs text-slate-600 dark:text-slate-400">Manage your own invoices and customers</div>
+                  </div>
+                </label>
+                
+                <label className="flex items-center space-x-3 p-4 border border-gray-300/50 dark:border-slate-600/50 rounded-xl cursor-pointer hover:bg-gray-50/50 dark:hover:bg-slate-700/50 transition-all">
+                  <input
+                    type="radio"
+                    name="accountType"
+                    value="accountant"
+                    checked={accountTypeData.isAccountant}
+                    onChange={() => setAccountTypeData(prev => ({ ...prev, isAccountant: true }))}
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-slate-800 dark:text-white">💼 Accountant</div>
+                    <div className="text-xs text-slate-600 dark:text-slate-400">Manage multiple clients and their invoices</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {accountTypeData.isAccountant && (
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl">
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  <strong>Note:</strong> Accountant mode enables client management features and allows you to create invoices on behalf of your clients.
+                </p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium rounded-xl transition-all duration-200 shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+            >
+              {isLoading ? 'Updating...' : 'Update Account Type'}
+            </button>
+          </form>
+        );
 
       default:
         return null;

@@ -1,5 +1,5 @@
-const KAD = require('../models/kadModel');
-const { redisUtils } = require('../config/redis');
+const KAD = require("../models/kadModel");
+const { redisUtils } = require("../config/redis");
 
 // @desc    Get all KADs with pagination and filtering
 // @route   GET /api/kads
@@ -13,44 +13,47 @@ const getKADs = async (req, res) => {
       section,
       category,
       popular,
-      sort = 'code'
+      sort = "code",
     } = req.query;
 
     const query = { isActive: true };
 
     // Apply filters with enhanced search and proper prioritization
     if (search) {
-      const cleanSearch = search.replace(/[\s.]/g, '');
+      const cleanSearch = search.replace(/[\s.]/g, "");
       const isCodeSearch = /^[\d.]+$/.test(search);
-      
+
       if (isCodeSearch) {
         // Code-based search with proper escaping
-        const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const escapedCleanSearch = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        
+        const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const escapedCleanSearch = cleanSearch.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        );
+
         query.$or = [
           // Exact matches (highest priority)
           { code: search },
           { originalCode: search },
           { originalCode: cleanSearch },
-          
+
           // Starts with search (7022 should find 70.22.10.00)
-          { code: new RegExp(`^${escapedSearch.replace(/\\./g, '\\.')}`, 'i') },
-          { code: new RegExp(`^${escapedCleanSearch}`, 'i') },
-          { originalCode: new RegExp(`^${escapedCleanSearch}`, 'i') },
-          
+          { code: new RegExp(`^${escapedSearch.replace(/\\./g, "\\.")}`, "i") },
+          { code: new RegExp(`^${escapedCleanSearch}`, "i") },
+          { originalCode: new RegExp(`^${escapedCleanSearch}`, "i") },
+
           // Contains search pattern
-          { code: new RegExp(escapedSearch.replace(/\\./g, '\\.'), 'i') },
-          { originalCode: new RegExp(escapedCleanSearch, 'i') }
+          { code: new RegExp(escapedSearch.replace(/\\./g, "\\."), "i") },
+          { originalCode: new RegExp(escapedCleanSearch, "i") },
         ];
       } else {
         // Text-based search
         query.$or = [
           // Description search (Greek and English)
-          { description: new RegExp(search, 'i') },
-          { descriptionEN: new RegExp(search, 'i') },
+          { description: new RegExp(search, "i") },
+          { descriptionEN: new RegExp(search, "i") },
           // Keywords search
-          { keywords: { $in: [new RegExp(search, 'i')] } }
+          { keywords: { $in: [new RegExp(search, "i")] } },
         ];
       }
     }
@@ -60,26 +63,26 @@ const getKADs = async (req, res) => {
     }
 
     if (category) {
-      query.category = new RegExp(category, 'i');
+      query.category = new RegExp(category, "i");
     }
 
-    if (popular === 'true') {
+    if (popular === "true") {
       query.isPopular = true;
     }
 
-    // Sorting options  
+    // Sorting options
     let sortObj = {};
     switch (sort) {
-      case 'code':
+      case "code":
         sortObj = { code: 1 };
         break;
-      case 'description':
+      case "description":
         sortObj = { description: 1 };
         break;
-      case 'popular':
+      case "popular":
         sortObj = { isPopular: -1, code: 1 };
         break;
-      case 'section':
+      case "section":
         sortObj = { section: 1, code: 1 };
         break;
       default:
@@ -90,7 +93,7 @@ const getKADs = async (req, res) => {
       page: parseInt(page),
       limit: parseInt(limit),
       sort: sortObj,
-      lean: true
+      lean: true,
     };
 
     const result = await KAD.paginate(query, options);
@@ -104,14 +107,14 @@ const getKADs = async (req, res) => {
         total: result.totalDocs,
         limit: result.limit,
         hasNext: result.hasNextPage,
-        hasPrev: result.hasPrevPage
-      }
+        hasPrev: result.hasPrevPage,
+      },
     });
   } catch (error) {
-    console.error('Get KADs error:', error);
+    console.error("Get KADs error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error retrieving KADs'
+      message: "Error retrieving KADs",
     });
   }
 };
@@ -122,25 +125,25 @@ const getKADs = async (req, res) => {
 const getKAD = async (req, res) => {
   try {
     const { code } = req.params;
-    
+
     const kad = await KAD.findOne({ code, isActive: true });
-    
+
     if (!kad) {
       return res.status(404).json({
         success: false,
-        message: 'KAD not found'
+        message: "KAD not found",
       });
     }
 
     res.status(200).json({
       success: true,
-      data: kad
+      data: kad,
     });
   } catch (error) {
-    console.error('Get KAD error:', error);
+    console.error("Get KAD error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error retrieving KAD'
+      message: "Error retrieving KAD",
     });
   }
 };
@@ -157,7 +160,7 @@ const createKAD = async (req, res) => {
     if (existingKAD) {
       return res.status(400).json({
         success: false,
-        message: 'KAD with this code already exists'
+        message: "KAD with this code already exists",
       });
     }
 
@@ -165,24 +168,24 @@ const createKAD = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'KAD created successfully',
-      data: kad
+      message: "KAD created successfully",
+      data: kad,
     });
   } catch (error) {
-    console.error('Create KAD error:', error);
-    
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
+    console.error("Create KAD error:", error);
+
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
       return res.status(400).json({
         success: false,
-        message: 'Validation error',
-        errors
+        message: "Validation error",
+        errors,
       });
     }
 
     res.status(500).json({
       success: false,
-      message: 'Error creating KAD'
+      message: "Error creating KAD",
     });
   }
 };
@@ -204,30 +207,30 @@ const updateKAD = async (req, res) => {
     if (!kad) {
       return res.status(404).json({
         success: false,
-        message: 'KAD not found'
+        message: "KAD not found",
       });
     }
 
     res.status(200).json({
       success: true,
-      message: 'KAD updated successfully',
-      data: kad
+      message: "KAD updated successfully",
+      data: kad,
     });
   } catch (error) {
-    console.error('Update KAD error:', error);
-    
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
+    console.error("Update KAD error:", error);
+
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
       return res.status(400).json({
         success: false,
-        message: 'Validation error',
-        errors
+        message: "Validation error",
+        errors,
       });
     }
 
     res.status(500).json({
       success: false,
-      message: 'Error updating KAD'
+      message: "Error updating KAD",
     });
   }
 };
@@ -248,19 +251,19 @@ const deleteKAD = async (req, res) => {
     if (!kad) {
       return res.status(404).json({
         success: false,
-        message: 'KAD not found'
+        message: "KAD not found",
       });
     }
 
     res.status(200).json({
       success: true,
-      message: 'KAD deactivated successfully'
+      message: "KAD deactivated successfully",
     });
   } catch (error) {
-    console.error('Delete KAD error:', error);
+    console.error("Delete KAD error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error deleting KAD'
+      message: "Error deleting KAD",
     });
   }
 };
@@ -275,7 +278,7 @@ const bulkUploadKADs = async (req, res) => {
     if (!Array.isArray(kads)) {
       return res.status(400).json({
         success: false,
-        message: 'KADs must be an array'
+        message: "KADs must be an array",
       });
     }
 
@@ -309,20 +312,20 @@ const bulkUploadKADs = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Bulk upload completed',
+      message: "Bulk upload completed",
       stats: {
         total: kads.length,
         created,
         updated,
-        errors: errors.length
+        errors: errors.length,
       },
-      errors: errors.slice(0, 10) // Limit error messages
+      errors: errors.slice(0, 10), // Limit error messages
     });
   } catch (error) {
-    console.error('Bulk upload error:', error);
+    console.error("Bulk upload error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error during bulk upload'
+      message: "Error during bulk upload",
     });
   }
 };
@@ -336,25 +339,25 @@ const getSections = async (req, res) => {
       { $match: { isActive: true } },
       {
         $group: {
-          _id: '$section',
+          _id: "$section",
           count: { $sum: 1 },
           popularCount: {
-            $sum: { $cond: [{ $eq: ['$isPopular', true] }, 1, 0] }
-          }
-        }
+            $sum: { $cond: [{ $eq: ["$isPopular", true] }, 1, 0] },
+          },
+        },
       },
-      { $sort: { _id: 1 } }
+      { $sort: { _id: 1 } },
     ]);
 
     res.status(200).json({
       success: true,
-      data: sections
+      data: sections,
     });
   } catch (error) {
-    console.error('Get sections error:', error);
+    console.error("Get sections error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error retrieving sections'
+      message: "Error retrieving sections",
     });
   }
 };
@@ -371,13 +374,13 @@ const searchKADs = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: kads
+      data: kads,
     });
   } catch (error) {
-    console.error('Search KADs error:', error);
+    console.error("Search KADs error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error searching KADs'
+      message: "Error searching KADs",
     });
   }
 };
@@ -391,13 +394,13 @@ const getPopularKADs = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: kads
+      data: kads,
     });
   } catch (error) {
-    console.error('Get popular KADs error:', error);
+    console.error("Get popular KADs error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error retrieving popular KADs'
+      message: "Error retrieving popular KADs",
     });
   }
 };
@@ -411,5 +414,5 @@ module.exports = {
   bulkUploadKADs,
   getSections,
   searchKADs,
-  getPopularKADs
+  getPopularKADs,
 };

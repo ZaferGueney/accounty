@@ -226,9 +226,8 @@ export const invoiceAPI = {
   getInvoiceStats: (params = {}) => api.get('/api/invoices/stats', { params }),
   getNextInvoiceNumber: (params = {}) => api.get('/api/invoices/next-number', { params }),
   previewInvoice: async (data, theme = 'light') => {
-    const response = await api.post('/api/invoices/preview?theme=' + theme, data, {
-      responseType: 'blob'
-    });
+    // For now, server returns JSON since PDF generation is not implemented
+    const response = await api.post('/api/invoices/preview?theme=' + theme, data);
     
     // Create blob URL for the PDF
     const blob = new Blob([response.data], { type: 'application/pdf' });

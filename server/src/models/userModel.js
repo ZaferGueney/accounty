@@ -91,6 +91,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isAccountant: {
+    type: Boolean,
+    default: false
+  },
   lastLogin: {
     type: Date,
     default: null

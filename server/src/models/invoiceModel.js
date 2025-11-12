@@ -136,7 +136,7 @@ const invoiceSchema = new mongoose.Schema({
     },
     name: {
       type: String,
-      required: true
+      required: false // Allow empty names for drafts
     },
     address: {
       street: String,
@@ -166,7 +166,7 @@ const invoiceSchema = new mongoose.Schema({
     },
     description: {
       type: String,
-      required: true,
+      required: false, // Allow empty descriptions for drafts
       trim: true
     },
     itemDescription: {
@@ -186,13 +186,15 @@ const invoiceSchema = new mongoose.Schema({
     },
     unitPrice: {
       type: Number,
-      required: true,
-      min: 0
+      required: false, // Allow 0 prices for drafts
+      min: 0,
+      default: 0
     },
     netValue: {
       type: Number,
-      required: true,
-      min: 0
+      required: false, // Allow 0 values for drafts
+      min: 0,
+      default: 0
     },
     vatCategory: {
       type: String,
@@ -202,8 +204,9 @@ const invoiceSchema = new mongoose.Schema({
     },
     vatAmount: {
       type: Number,
-      required: true,
-      min: 0
+      required: false, // Allow 0 VAT for drafts
+      min: 0,
+      default: 0
     },
     withholdingTaxCategory: {
       type: String,
@@ -396,6 +399,11 @@ const invoiceSchema = new mongoose.Schema({
   notes: {
     type: String,
     trim: true
+  },
+  footerText: {
+    type: String,
+    trim: true,
+    default: 'Vielen Dank für Ihren Auftrag!\nBei Fragen stehen wir Ihnen gerne zur Verfügung.\n\nMit freundlichen Grüßen'
   },
   currency: {
     type: String,

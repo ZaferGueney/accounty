@@ -8,6 +8,7 @@ const {
   changePassword,
   updateEmail,
   updateNames,
+  updateAccountType,
   deleteAccount,
   refreshToken,
   logoutUser,
@@ -33,6 +34,7 @@ router.post('/logout', protect, logoutUser); // Logout endpoint
 router.put('/password', protect, changePassword);
 router.put('/email', protect, updateEmail);
 router.put('/names', protect, updateNames);
+router.put('/account-type', protect, updateAccountType);
 router.delete('/account', protect, deleteAccount);
 
 // Example of premium feature route (requires active subscription)

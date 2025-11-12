@@ -50,6 +50,24 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
     exchangeRate: 1,
     customerId: '',
     vatRegulation: 'standard', // VAT regulation type
+    issuer: {
+      vatNumber: '',
+      country: 'GR',
+      branch: 0,
+      name: '',
+      address: {
+        street: '',
+        number: '',
+        postalCode: '',
+        city: '',
+        prefecture: '',
+        country: 'GR'
+      },
+      taxInfo: {
+        afm: '',
+        doy: { code: '', name: '' }
+      }
+    },
     counterpart: {
       name: '',
       vatNumber: '',
@@ -85,6 +103,7 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
       }]
     }],
     notes: '',
+    footerText: 'Vielen Dank für Ihren Auftrag!\nBei Fragen stehen wir Ihnen gerne zur Verfügung.\n\nMit freundlichen Grüßen',
     payment: {
       method: '3', // Bank transfer default
       amount: 0,
@@ -199,8 +218,8 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
           taxInfo: {
             afm: settings.tax?.afm || '',
             doy: {
-              code: settings.tax?.taxOffice?.code || '',
-              name: settings.tax?.taxOffice?.name || ''
+              code: settings.tax?.doy?.code || '',
+              name: settings.tax?.doy?.name || ''
             }
           }
         }
@@ -402,30 +421,73 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
 
   const handlePreview = async () => {
     try {
+      console.log('🔄 Client: Starting PDF preview...');
       setError('');
       
+      const totals = calculateTotals();
+      console.log('💰 Client: Calculated totals:', totals);
+
       const invoiceData = {
         ...invoice,
         totals: {
-          totalNetValue: calculateTotals().netValue,
-          totalVatAmount: calculateTotals().vatAmount,
+          totalNetValue: totals.netValue,
+          totalVatAmount: totals.vatAmount,
           totalWithheldAmount: 0,
           totalFeesAmount: 0,
           totalOtherTaxesAmount: 0,
           totalDeductionsAmount: 0,
-          totalGrossValue: calculateTotals().netValue + calculateTotals().vatAmount,
-          totalAmount: calculateTotals().totalAmount
+          totalGrossValue: totals.netValue + totals.vatAmount,
+          totalAmount: totals.totalAmount
         }
       };
 
-      // Open preview in new tab
-      const response = await invoiceAPI.previewInvoice(invoiceData);
-      if (response.data.success && response.data.pdfUrl) {
-        window.open(response.data.pdfUrl, '_blank');
+      console.log('📊 Client: Invoice data being sent:', {
+        invoiceNumber: invoiceData.invoiceNumber,
+        issuerName: invoiceData.issuer?.name,
+        counterpartName: invoiceData.counterpart?.name,
+        itemsCount: invoiceData.invoiceDetails?.length || 0,
+        totals: invoiceData.totals,
+        vatRegulation: invoiceData.vatRegulation
+      });
+
+      console.log('🔄 Client: Making API call...');
+      // Create a blob URL and open the PDF in a new tab
+      const response = await invoiceAPI.previewInvoice(invoiceData, { responseType: 'blob' });
+      
+      console.log('✅ Client: Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        contentType: response.headers?.['content-type'],
+        dataSize: response.data?.size || 'unknown'
+      });
+
+      if (response.status !== 200) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
       }
+
+      const pdfBlob = new Blob([response.data], { type: 'application/pdf' });
+      console.log('📄 Client: PDF blob created, size:', pdfBlob.size, 'bytes');
+
+      if (pdfBlob.size === 0) {
+        throw new Error('Received empty PDF file');
+      }
+
+      const pdfUrl = window.URL.createObjectURL(pdfBlob);
+      console.log('🔗 Client: Opening PDF URL:', pdfUrl);
+      window.open(pdfUrl, '_blank');
+      
+      // Clean up the URL after a delay
+      setTimeout(() => {
+        window.URL.revokeObjectURL(pdfUrl);
+        console.log('🧹 Client: PDF URL cleaned up');
+      }, 1000);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to preview invoice');
-      console.error('Preview invoice error:', err);
+      console.error('💥 Client: Preview invoice error:', {
+        message: err.message,
+        response: err.response,
+        stack: err.stack
+      });
+      setError(err.response?.data?.message || err.message || 'Failed to preview invoice');
     }
   };
 
@@ -464,7 +526,7 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                 {t('afm')}: {settings?.tax?.afm || 'Not set'}
               </div>
               <div className="text-sm text-gray-600 dark:text-gray-300">
-                {t('taxOffice')}: {settings?.tax?.taxOffice?.name || 'Not set'}
+                {t('taxOffice')}: {settings?.tax?.doy?.name || 'Not set'}
               </div>
               <div className="text-sm text-gray-600 dark:text-gray-300">
                 {settings?.address?.street || 'Address'} {settings?.address?.number || ''}
@@ -817,6 +879,23 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
           />
         </div>
 
+        {/* 5. Footer Text Section */}
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-gray-900 dark:text-white">
+            Footer Text
+          </label>
+          <textarea
+            value={invoice.footerText}
+            onChange={(e) => setInvoice(prev => ({ ...prev, footerText: e.target.value }))}
+            rows={6}
+            placeholder="Vielen Dank für Ihren Auftrag!\nBei Fragen stehen wir Ihnen gerne zur Verfügung.\n\nMit freundlichen Grüßen"
+            className="w-full px-4 py-3 border border-gray-200 dark:border-slate-600 rounded-xl text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all font-mono"
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Custom footer text for your invoices
+          </p>
+        </div>
+
         {/* VAT Regulation Section - Minimalistic */}
         <div className="space-y-3">
           <label className="block text-sm font-medium text-gray-900 dark:text-white">
@@ -832,7 +911,7 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                   : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700'
               }`}
             >
-              Standard VAT
+              {t('invoice.vatRegulationTypes.standard')}
             </button>
             <button
               type="button"
@@ -843,7 +922,7 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                   : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700'
               }`}
             >
-              Tax-free §4 UStG
+              {t('invoice.vatRegulationTypes.taxFree')}
             </button>
             <button
               type="button"
@@ -854,7 +933,7 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                   : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700'
               }`}
             >
-              Reverse Charge §13b UStG
+              {t('invoice.vatRegulationTypes.reverseCharge')}
             </button>
             <button
               type="button"
@@ -865,7 +944,7 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                   : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700'
               }`}
             >
-              EU Reverse Charge §18b UStG
+              {t('invoice.vatRegulationTypes.euReverseCharge')}
             </button>
             <button
               type="button"
@@ -876,7 +955,7 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                   : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700'
               }`}
             >
-              Intra-Community Deliveries
+              {t('invoice.vatRegulationTypes.intraCommunity')}
             </button>
             <button
               type="button"
@@ -887,12 +966,12 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                   : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700'
               }`}
             >
-              Export (Non-EU)
+              {t('invoice.vatRegulationTypes.exportNonEU')}
             </button>
           </div>
         </div>
 
-        {/* 5. Actions */}
+        {/* 6. Actions */}
         <div className="flex justify-end gap-3 pt-8 border-t border-gray-200 dark:border-slate-600">
           <button
             onClick={() => onClose && onClose()}

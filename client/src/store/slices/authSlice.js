@@ -157,5 +157,6 @@ export const selectIsAuthenticated = (state) => state.auth.isAuthenticated;
 export const selectIsLoading = (state) => state.auth.isLoading;
 export const selectAuthError = (state) => state.auth.error;
 export const selectIsInitialized = (state) => state.auth.initialized;
+export const selectIsAccountant = (state) => state.auth.user?.isAccountant || false;
 
 export default authSlice.reducer;

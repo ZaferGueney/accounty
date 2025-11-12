@@ -14,6 +14,7 @@ Accounty is a minimalistic Greek invoicing web application built with modern tec
 - **Database**: MongoDB Atlas
 - **Caching & Sessions**: Redis with ioredis
 - **Rate Limiting**: Redis-based rate limiting
+- **PDF Generation**: Puppeteer with custom invoice templates
 
 ### Port Configuration
 - **Client**: `http://localhost:4629`
@@ -53,25 +54,31 @@ Accounty/
 We strictly follow MVC pattern with exact naming conventions:
 
 #### Models (`/server/src/models/`)
-- `userModel.js` - User authentication and subscription management
+- `userModel.js` - User authentication, subscription management, and accountant mode
 - `settingsModel.js` - Greek business settings and tax compliance
 - `kadModel.js` - Greek Activity Codes (KAD) with comprehensive database
 - `customerModel.js` - Customer management with Greek tax compliance
-- `invoiceModel.js` - Invoice generation and AADE integration
+- `clientModel.js` - Client management for accountant mode
+- `invoiceModel.js` - Invoice generation, PDF templates, and AADE integration
 
 #### Controllers (`/server/src/controllers/`)
-- `userController.js` - User CRUD operations, login/register logic
+- `userController.js` - User CRUD operations, login/register, accountant mode toggle
 - `settingsController.js` - Business settings management, Greek tax validation
 - `kadController.js` - KAD management with search, pagination, and bulk operations
 - `customerController.js` - Customer CRUD operations with AFM validation
-- `invoiceController.js` - Invoice management with AADE compliance
+- `clientController.js` - Client management for accountants
+- `invoiceController.js` - Invoice management, PDF generation, AADE compliance
 
 #### Routes (`/server/src/routes/`)
 - `userRoutes.js` - Authentication and user management endpoints
 - `settingsRoutes.js` - Business settings and validation endpoints
 - `kadRoutes.js` - Greek Activity Codes API endpoints with search and filtering
 - `customerRoutes.js` - Customer management endpoints
+- `clientRoutes.js` - Client management for accountant mode
 - `invoiceRoutes.js` - Invoice and statistics endpoints
+
+#### Services (`/server/src/services/`)
+- `pdfService.js` - PDF generation with Puppeteer and invoice templates
 
 ### API Endpoints
 ```
@@ -80,6 +87,14 @@ POST   /api/users/register     # User registration
 POST   /api/users/login        # User authentication
 GET    /api/users/me           # Get current user
 POST   /api/users/logout       # User logout
+GET    /api/users/profile      # Get user profile
+PUT    /api/users/profile      # Update user profile
+PUT    /api/users/password     # Change password
+PUT    /api/users/email        # Update email
+PUT    /api/users/names        # Update names
+PUT    /api/users/account-type # Toggle accountant mode
+DELETE /api/users/account      # Delete account
+POST   /api/users/refresh      # Refresh access token
 
 # Settings Management
 GET    /api/settings           # Get user settings
@@ -110,6 +125,13 @@ PUT    /api/customers/:id      # Update customer
 DELETE /api/customers/:id      # Soft delete customer
 GET    /api/customers/search   # Search customers by AFM/name
 
+# Client Management (Accountant Mode)
+GET    /api/clients            # List clients (accountants only)
+POST   /api/clients            # Create new client (accountants only)
+GET    /api/clients/:id        # Get single client (accountants only)
+PUT    /api/clients/:id        # Update client (accountants only)
+DELETE /api/clients/:id        # Delete client (accountants only)
+
 # Invoice Management
 GET    /api/invoices           # List invoices with filters
 POST   /api/invoices           # Create new invoice
@@ -119,6 +141,7 @@ DELETE /api/invoices/:id       # Delete invoice
 GET    /api/invoices/stats     # Get invoice statistics
 GET    /api/invoices/next-number # Get next invoice number
 POST   /api/invoices/:id/pay   # Mark invoice as paid
+POST   /api/invoices/preview   # Generate PDF preview
 
 # AADE Integration
 GET    /api/aade/status        # AADE service status
@@ -250,6 +273,8 @@ shadow-2xl shadow-gray-500/10 dark:shadow-slate-900/20
 - Admin privilege support
 - Password strength requirements
 - Account activation/deactivation
+- Accountant mode toggle for client management
+- Virtual fields for user information display
 
 ## 🗄️ Database Design
 
@@ -261,6 +286,7 @@ shadow-2xl shadow-gray-500/10 dark:shadow-slate-900/20
   firstName: String,
   lastName: String,
   company: String,
+  isAccountant: Boolean (default: false),
   subscription: {
     plan: enum ['free', 'basic', 'premium'],
     status: enum ['active', 'inactive', 'canceled', 'expired'],
@@ -276,7 +302,12 @@ shadow-2xl shadow-gray-500/10 dark:shadow-slate-900/20
   },
   isAdmin: Boolean,
   isEmailVerified: Boolean,
-  taxSettings: Object
+  isActive: Boolean (default: true),
+  lastLogin: Date,
+  taxSettings: Object,
+  // Virtual Fields
+  fullName: String (computed),
+  displayName: String (computed)
 }
 ```
 
@@ -316,6 +347,104 @@ shadow-2xl shadow-gray-500/10 dark:shadow-slate-900/20
   },
   completedSteps: Object,
   isComplete: Boolean
+}
+```
+
+### Client Schema (Accountant Mode)
+```javascript
+{
+  accountantId: ObjectId (ref: User, required),
+  companyName: String (required),
+  contactPerson: String,
+  email: String,
+  phone: String,
+  address: {
+    street: String,
+    number: String,
+    city: String,
+    postalCode: String,
+    prefecture: String,
+    country: String (default: 'GR')
+  },
+  taxInfo: {
+    afm: String (Greek tax number),
+    doy: { code: String, name: String },
+    vatNumber: String,
+    vatRegistered: Boolean
+  },
+  isActive: Boolean (default: true),
+  notes: String,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### Invoice Schema
+```javascript
+{
+  userId: ObjectId (ref: User, required),
+  clientId: ObjectId (ref: Client, optional - accountant mode only),
+  customerId: ObjectId (ref: Customer, optional),
+  invoiceNumber: String (auto-generated),
+  series: String (default: 'A'),
+  invoiceType: String (AADE compliant),
+  status: enum ['draft', 'sent', 'paid', 'overdue', 'cancelled'],
+  issueDate: Date,
+  dueDate: Date,
+  currency: String (default: 'EUR'),
+  exchangeRate: Number (default: 1),
+  vatRegulation: String (tax regulation type),
+  issuer: {
+    vatNumber: String,
+    country: String,
+    branch: Number,
+    name: String,
+    address: Object,
+    taxInfo: Object
+  },
+  counterpart: {
+    name: String,
+    vatNumber: String,
+    country: String,
+    branch: Number,
+    address: Object,
+    taxInfo: Object
+  },
+  invoiceDetails: [{
+    lineNumber: Number,
+    description: String,
+    itemDescription: String,
+    quantity: Number,
+    unit: String,
+    unitPrice: Number,
+    netValue: Number,
+    vatCategory: String,
+    vatAmount: Number,
+    incomeClassification: Array,
+    expensesClassification: Array
+  }],
+  totals: {
+    totalNetValue: Number,
+    totalVatAmount: Number,
+    totalWithheldAmount: Number,
+    totalFeesAmount: Number,
+    totalOtherTaxesAmount: Number,
+    totalDeductionsAmount: Number,
+    totalGrossValue: Number,
+    totalAmount: Number
+  },
+  payment: {
+    method: String,
+    terms: String,
+    paidDate: Date,
+    paidAmount: Number
+  },
+  notes: String,
+  footerText: String,
+  aadeStatus: enum ['pending', 'transmitted', 'failed', 'cancelled'],
+  aadeData: Object,
+  amountDue: Number,
+  daysOverdue: Number
 }
 ```
 
@@ -421,6 +550,11 @@ If you're getting 404 errors for `/api/invoices/*` or `/api/customers/*` endpoin
 - **Modern Invoice Builder**: Greek standards compliance with unit types, series selection
 - **Professional Invoice Design**: Modern dark/light mode interface with proper business data
 - **Complete Internationalization**: Full i18n support for all invoice components (EN/EL/DE)
+- **VAT Regulations Localization**: Proper translation support for all VAT regulation types
+- **Accountant Mode System**: Complete dual-mode architecture for normal users vs accountants
+- **Client Management**: Full client CRUD operations for accountant mode
+- **PDF Invoice Generation**: Puppeteer-based PDF generation with custom templates
+- **Comprehensive Logging**: Detailed logging system for debugging PDF generation
 - **Redux Data Flow Fix**: Proper business settings integration in InvoiceEdit
 - Responsive glass morphism design
 - Multi-language support with complete translation files
@@ -431,9 +565,10 @@ If you're getting 404 errors for `/api/invoices/*` or `/api/customers/*` endpoin
 - User and settings caching
 
 ### 🔄 In Progress
-- PDF invoice generation and templates
+- PDF generation debugging and optimization
 - AADE integration for Greek tax compliance
 - Invoice filtering and advanced search
+- Client.jsx component for accountant mode UI
 
 ### 📅 Planned Features
 - Stripe subscription integration
@@ -550,6 +685,59 @@ Comprehensive Greek Activity Codes (KAD) management system with search, filterin
 
 ---
 
+## 🎨 PDF Generation System
+
+### Overview
+Comprehensive PDF invoice generation system using Puppeteer with custom HTML templates and theme support.
+
+### Features Implemented
+- **Custom HTML Templates**: Professional invoice templates with modern design
+- **Theme Support**: Light, dark, and professional theme variants
+- **Multi-language**: VAT regulation translations in EN/EL/DE
+- **Dynamic Content**: Automatic invoice data population with validation
+- **Error Handling**: Comprehensive logging and error reporting
+- **Browser Management**: Efficient Puppeteer browser lifecycle management
+
+### PDF Service Architecture
+```javascript
+// /server/src/services/pdfService.js
+{
+  generateInvoicePDF(invoiceData, theme): // Main PDF generation
+  generateInvoiceHTML(invoice, theme): // HTML template processing
+  generateInvoiceItemsHTML(items, currency, theme): // Invoice items table
+  initialize(): // Browser startup
+  cleanup(): // Resource management
+}
+```
+
+### Template Structure
+```html
+<!-- /server/src/templates/invoiceTemplate.html -->
+- Header: Invoice title, number, dates
+- Parties: Issuer and recipient information
+- Invoice Meta: Series, currency, payment terms
+- Items Table: Dynamic line items with calculations
+- Totals: Net, VAT, and total amounts
+- VAT Regulation: Legal compliance section
+- Notes: Additional invoice notes
+- Footer: Professional footer with branding
+```
+
+### Theme System
+- **Light Theme**: Clean white background with subtle borders
+- **Dark Theme**: Professional dark slate with blue accents
+- **Professional Theme**: Corporate styling with indigo highlights
+
+### Logging Integration
+Comprehensive logging system tracks:
+- Invoice data processing
+- Template loading and HTML generation
+- Theme application
+- PDF creation and buffer handling
+- Error states with full stack traces
+
+---
+
 **Last Updated**: November 2024  
-**Version**: 1.2.0-beta (KAD Management System)  
+**Version**: 1.3.0-beta (PDF Generation & Accountant Mode)  
 **Maintainer**: Development Team

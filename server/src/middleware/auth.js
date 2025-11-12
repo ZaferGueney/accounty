@@ -45,7 +45,7 @@ const protect = async (req, res, next) => {
         });
       }
       
-      user = dbUser.toObject();
+      user = dbUser.toObject({ virtuals: true });
       delete user.password;
       
       // Cache the user for future requests

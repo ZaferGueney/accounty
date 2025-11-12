@@ -9,7 +9,9 @@
       "Bash(npm uninstall:*)",
       "Bash(grep:*)",
       "Bash(mv:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(sed:*)",
+      "Bash(rg:*)"
     ],
     "deny": []
   }
