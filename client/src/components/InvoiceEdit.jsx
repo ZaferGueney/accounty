@@ -24,6 +24,8 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [showEditCustomer, setShowEditCustomer] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(null);
   const [newCustomer, setNewCustomer] = useState({
     name: '',
     email: '',
@@ -41,7 +43,17 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
     }
   });
   
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [statusAction, setStatusAction] = useState(''); // 'markPaid' or 'cancel'
+  const [paymentDetails, setPaymentDetails] = useState({
+    amount: 0,
+    paidDate: new Date().toISOString().split('T')[0],
+    method: '3',
+    info: ''
+  });
+
   const [invoice, setInvoice] = useState({
+    invoiceNumber: '',
     series: 'A',
     invoiceType: '2.1', // Service invoice default
     issueDate: new Date().toISOString().split('T')[0],
@@ -49,12 +61,14 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
     currency: 'EUR',
     exchangeRate: 1,
     customerId: '',
+    status: 'draft', // Add status field
     vatRegulation: 'standard', // VAT regulation type
     issuer: {
       vatNumber: '',
       country: 'GR',
       branch: 0,
       name: '',
+      legalForm: '',
       address: {
         street: '',
         number: '',
@@ -65,7 +79,8 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
       },
       taxInfo: {
         afm: '',
-        doy: { code: '', name: '' }
+        doy: { code: '', name: '' },
+        gemi: ''
       }
     },
     counterpart: {
@@ -97,8 +112,8 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
       vatCategory: '1', // 24% VAT
       vatAmount: 0,
       incomeClassification: [{
-        classificationType: 'E3_562_001', // Services revenue
-        categoryId: '1',
+        classificationType: 'E3_561_001', // B2B professional services
+        categoryId: 'category1_3', // Income from provision of services
         amount: 0
       }]
     }],
@@ -108,7 +123,8 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
       method: '3', // Bank transfer default
       amount: 0,
       info: ''
-    }
+    },
+    hideBankDetails: false
   });
 
   const vatRates = {
@@ -144,13 +160,6 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
     { value: 'E3_881_001', label: 'Revenue from professional activities' }
   ];
 
-  const seriesOptions = [
-    { value: 'A', label: 'Series A' },
-    { value: 'B', label: 'Series B' },
-    { value: 'Γ', label: 'Series Γ' },
-    { value: 'Δ', label: 'Series Δ' }
-  ];
-
   const unitTypes = [
     { value: 'pcs', label: t('invoice.unitTypes.pieces') },
     { value: 'hrs', label: t('invoice.unitTypes.hours') },
@@ -176,7 +185,19 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
       setLoading(true);
       const response = await invoiceAPI.getInvoice(invoiceId);
       if (response.data.success) {
-        setInvoice(response.data.invoice);
+        const invoiceData = response.data.invoice;
+        // Convert ISO dates to yyyy-MM-dd format for date inputs
+        if (invoiceData.issueDate) {
+          invoiceData.issueDate = invoiceData.issueDate.split('T')[0];
+        }
+        if (invoiceData.dueDate) {
+          invoiceData.dueDate = invoiceData.dueDate.split('T')[0];
+        }
+        // Ensure hideBankDetails has a default value to avoid controlled/uncontrolled warning
+        if (invoiceData.hideBankDetails === undefined) {
+          invoiceData.hideBankDetails = false;
+        }
+        setInvoice(invoiceData);
       }
     } catch (err) {
       setError('Failed to fetch invoice');
@@ -207,6 +228,7 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
           country: 'GR',
           branch: 0,
           name: settings.business?.legalName || settings.business?.tradingName || '',
+          legalForm: settings.business?.legalForm || '',
           address: {
             street: settings.address?.street || '',
             number: settings.address?.number || '',
@@ -220,7 +242,8 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
             doy: {
               code: settings.tax?.doy?.code || '',
               name: settings.tax?.doy?.name || ''
-            }
+            },
+            gemi: settings.tax?.gemi || ''
           }
         }
       }));
@@ -325,6 +348,21 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
     }
   };
 
+  const updateCustomer = async () => {
+    try {
+      setError('');
+      const response = await customerAPI.updateCustomer(editingCustomer._id, editingCustomer);
+      if (response.data.success) {
+        setCustomers(prev => prev.map(c => c._id === editingCustomer._id ? response.data.customer : c));
+        selectCustomer(response.data.customer);
+        setShowEditCustomer(false);
+        setEditingCustomer(null);
+      }
+    } catch (error) {
+      setError(error.response?.data?.message || 'Failed to update customer');
+    }
+  };
+
   // Update currency symbol in totals and items
   const getCurrencySymbol = (currency) => {
     const symbols = {
@@ -347,8 +385,8 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
       vatCategory: '1',
       vatAmount: 0,
       incomeClassification: [{
-        classificationType: 'E3_562_001',
-        categoryId: '1',
+        classificationType: 'E3_561_001', // B2B professional services
+        categoryId: 'category1_3', // Income from provision of services
         amount: 0
       }]
     };
@@ -412,23 +450,104 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
         if (onSave) onSave(response.data.invoice);
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save invoice');
+      const errorData = err.response?.data;
+
+      // Check if it's an AADE error with detailed error messages
+      if (errorData?.errors && Array.isArray(errorData.errors)) {
+        const aadeErrors = errorData.errors
+          .map(e => `[${e.code}] ${e.message}`)
+          .join('\n');
+
+        setError(`AADE Validation Errors:\n\n${aadeErrors}\n\nInvoice saved as pending. Fix the errors and click "Save & Send" to retry.`);
+      } else {
+        setError(errorData?.message || err.message || 'Failed to save invoice');
+      }
+
       console.error('Save invoice error:', err);
     } finally {
       setSaving(false);
     }
   };
 
+  const handleMarkAsPaid = async () => {
+    try {
+      setError('');
+      const response = await invoiceAPI.markInvoicePaid(invoiceId, paymentDetails);
+      if (response.data.success) {
+        setInvoice(response.data.invoice);
+        setShowStatusModal(false);
+        if (onSave) onSave(response.data.invoice);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to mark invoice as paid');
+    }
+  };
+
+  const handleCancelInvoice = async () => {
+    try {
+      setError('');
+
+      // Check if invoice is transmitted to AADE
+      const isTransmitted = invoice.aadeStatus === 'transmitted';
+
+      let response;
+      if (isTransmitted) {
+        // Call AADE cancellation endpoint
+        console.log('Cancelling transmitted invoice via AADE...');
+        response = await invoiceAPI.cancelAADEInvoice(invoiceId);
+
+        if (response.data.success) {
+          console.log('✅ Invoice cancelled in AADE:', response.data.cancellationMark);
+          setShowStatusModal(false);
+          if (onSave) onSave(response.data.invoice); // Update invoice in parent
+          if (onClose) onClose();
+        }
+      } else {
+        // Regular local cancellation for non-transmitted invoices
+        console.log('Cancelling local invoice...');
+        response = await invoiceAPI.deleteInvoice(invoiceId);
+
+        if (response.data.success) {
+          setShowStatusModal(false);
+          if (onClose) onClose();
+        }
+      }
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || 'Failed to cancel invoice';
+      const errors = err.response?.data?.errors;
+
+      if (errors && errors.length > 0) {
+        // Format AADE errors
+        const formattedErrors = errors.map(e => `[${e.code}] ${e.message}`).join('\n');
+        setError(`AADE Cancellation Failed:\n\n${formattedErrors}`);
+      } else {
+        setError(errorMessage);
+      }
+    }
+  };
+
   const handlePreview = async () => {
     try {
-      console.log('🔄 Client: Starting PDF preview...');
       setError('');
-      
+
       const totals = calculateTotals();
-      console.log('💰 Client: Calculated totals:', totals);
+
+      // Fetch next invoice number if not already set (for new invoices)
+      let previewInvoiceNumber = invoice.invoiceNumber;
+      if (!previewInvoiceNumber && !invoiceId) {
+        try {
+          const nextNumResponse = await invoiceAPI.getNextInvoiceNumber(invoice.series || 'A');
+          if (nextNumResponse.data.success) {
+            previewInvoiceNumber = nextNumResponse.data.nextNumber;
+          }
+        } catch (e) {
+          previewInvoiceNumber = 'DRAFT';
+        }
+      }
 
       const invoiceData = {
         ...invoice,
+        invoiceNumber: previewInvoiceNumber || invoice.invoiceNumber || 'DRAFT',
         totals: {
           totalNetValue: totals.netValue,
           totalVatAmount: totals.vatAmount,
@@ -441,52 +560,31 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
         }
       };
 
-      console.log('📊 Client: Invoice data being sent:', {
-        invoiceNumber: invoiceData.invoiceNumber,
-        issuerName: invoiceData.issuer?.name,
-        counterpartName: invoiceData.counterpart?.name,
-        itemsCount: invoiceData.invoiceDetails?.length || 0,
-        totals: invoiceData.totals,
-        vatRegulation: invoiceData.vatRegulation
-      });
+      const currentLanguage = router.locale || 'en';
+      const response = await invoiceAPI.previewInvoice(invoiceData, 'light', currentLanguage);
 
-      console.log('🔄 Client: Making API call...');
-      // Create a blob URL and open the PDF in a new tab
-      const response = await invoiceAPI.previewInvoice(invoiceData, { responseType: 'blob' });
-      
-      console.log('✅ Client: Response received:', {
-        status: response.status,
-        statusText: response.statusText,
-        contentType: response.headers?.['content-type'],
-        dataSize: response.data?.size || 'unknown'
-      });
+      if (!response || !response.data) {
+        throw new Error('No response data received from server');
+      }
 
-      if (response.status !== 200) {
+      if (response.status && response.status !== 200) {
         throw new Error(`Server returned ${response.status}: ${response.statusText}`);
       }
 
-      const pdfBlob = new Blob([response.data], { type: 'application/pdf' });
-      console.log('📄 Client: PDF blob created, size:', pdfBlob.size, 'bytes');
+      const pdfBlob = response.data;
 
       if (pdfBlob.size === 0) {
         throw new Error('Received empty PDF file');
       }
 
       const pdfUrl = window.URL.createObjectURL(pdfBlob);
-      console.log('🔗 Client: Opening PDF URL:', pdfUrl);
       window.open(pdfUrl, '_blank');
-      
-      // Clean up the URL after a delay
+
       setTimeout(() => {
         window.URL.revokeObjectURL(pdfUrl);
-        console.log('🧹 Client: PDF URL cleaned up');
       }, 1000);
     } catch (err) {
-      console.error('💥 Client: Preview invoice error:', {
-        message: err.message,
-        response: err.response,
-        stack: err.stack
-      });
+      console.error('Preview invoice error:', err);
       setError(err.response?.data?.message || err.message || 'Failed to preview invoice');
     }
   };
@@ -501,11 +599,58 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
     );
   }
 
+  const getStatusBadge = (status) => {
+    const badges = {
+      draft: { color: 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300', label: 'Draft' },
+      sent: { color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300', label: 'Sent' },
+      paid: { color: 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300', label: 'Paid' },
+      overdue: { color: 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300', label: 'Overdue' },
+      cancelled: { color: 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 line-through', label: 'Cancelled' }
+    };
+    const badge = badges[status] || badges.draft;
+    return <span className={`px-3 py-1 rounded-full text-xs font-semibold ${badge.color}`}>{badge.label}</span>;
+  };
+
   return (
     <div className="max-w-7xl mx-auto p-6 bg-white dark:bg-slate-900 min-h-screen">
       {error && (
         <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/30 border-l-4 border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 text-sm rounded-r-lg">
           {error}
+        </div>
+      )}
+
+      {/* Status Badge for Existing Invoices */}
+      {invoiceId && invoice.status && (
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-600 dark:text-gray-400">Status:</span>
+            {getStatusBadge(invoice.status)}
+          </div>
+          {invoice.status !== 'cancelled' && invoice.status !== 'paid' && (
+            <div className="flex gap-2">
+              {invoice.status === 'sent' || invoice.status === 'overdue' ? (
+                <button
+                  onClick={() => {
+                    setStatusAction('markPaid');
+                    setPaymentDetails(prev => ({ ...prev, amount: calculateTotals().totalAmount }));
+                    setShowStatusModal(true);
+                  }}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-xl transition-colors"
+                >
+                  Mark as Paid
+                </button>
+              ) : null}
+              <button
+                onClick={() => {
+                  setStatusAction('cancel');
+                  setShowStatusModal(true);
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-xl transition-colors"
+              >
+                Cancel Invoice
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -605,14 +750,31 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                     <div className="text-sm text-gray-600 dark:text-gray-300">{invoice.counterpart.address.street} {invoice.counterpart.address.number}</div>
                     <div className="text-sm text-gray-600 dark:text-gray-300">{invoice.counterpart.address.city}, {invoice.counterpart.address.postalCode}</div>
                   </div>
-                  <button
-                    onClick={() => {
-                      setInvoice(prev => ({ ...prev, customerId: '', counterpart: { name: '', vatNumber: '', country: 'GR', branch: 0, address: { street: '', number: '', postalCode: '', city: '', prefecture: '', country: 'GR' }, taxInfo: { afm: '', doy: { code: '', name: '' } } } }));
-                    }}
-                    className="ml-4 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                  >
-                    {t('invoice.change')}
-                  </button>
+                  <div className="ml-4 flex gap-2">
+                    <button
+                      onClick={() => {
+                        const customer = customers.find(c => c._id === invoice.customerId);
+                        if (customer) {
+                          setEditingCustomer(customer);
+                          setShowEditCustomer(true);
+                        }
+                      }}
+                      className="px-3 py-1.5 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                      title="Edit customer"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setInvoice(prev => ({ ...prev, customerId: '', counterpart: { name: '', vatNumber: '', country: 'GR', branch: 0, address: { street: '', number: '', postalCode: '', city: '', prefecture: '', country: 'GR' }, taxInfo: { afm: '', doy: { code: '', name: '' } } } }));
+                      }}
+                      className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                    >
+                      {t('invoice.change')}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -620,20 +782,7 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
         </div>
 
         {/* 2. Invoice Details */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          
-          <div className="space-y-2">
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">{t('invoice.series')}</label>
-            <select
-              value={invoice.series}
-              onChange={(e) => setInvoice(prev => ({ ...prev, series: e.target.value }))}
-              className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-            >
-              {seriesOptions.map(option => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 
           <div className="space-y-2">
             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">{t('invoice.type')}</label>
@@ -828,16 +977,16 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
 
                 {/* Additional Description */}
                 <div className="px-3 md:px-4 pb-3 md:pb-4">
-                  <input
-                    type="text"
+                  <textarea
                     value={line.itemDescription || ''}
                     onChange={(e) => {
                       const newDetails = [...invoice.invoiceDetails];
                       newDetails[index].itemDescription = e.target.value;
                       setInvoice(prev => ({ ...prev, invoiceDetails: newDetails }));
                     }}
-                    placeholder={t('invoice.additionalDesc')}
-                    className="w-full px-3 py-2 text-sm border border-gray-100 dark:border-slate-600 rounded-lg bg-gray-50 dark:bg-slate-700 text-gray-600 dark:text-gray-300 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent italic transition-all"
+                    placeholder={`${t('invoice.additionalDesc')}\nDate range, venue details...\nMultiple lines supported`}
+                    rows={2}
+                    className="w-full px-3 py-2 text-sm border border-gray-100 dark:border-slate-600 rounded-lg bg-gray-50 dark:bg-slate-700 text-gray-600 dark:text-gray-300 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent italic transition-all resize-none"
                   />
                 </div>
               </div>
@@ -969,6 +1118,20 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
               {t('invoice.vatRegulationTypes.exportNonEU')}
             </button>
           </div>
+        </div>
+
+        {/* Hide Bank Details Option */}
+        <div className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            id="hideBankDetails"
+            checked={invoice.hideBankDetails || false}
+            onChange={(e) => setInvoice(prev => ({ ...prev, hideBankDetails: e.target.checked }))}
+            className="w-4 h-4 text-blue-600 bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 rounded focus:ring-blue-500"
+          />
+          <label htmlFor="hideBankDetails" className="text-sm text-gray-700 dark:text-gray-300">
+            Hide bank details on invoice
+          </label>
         </div>
 
         {/* 6. Actions */}
@@ -1181,6 +1344,295 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {t('customer.create')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status Action Modal */}
+      {showStatusModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowStatusModal(false)}></div>
+
+            <div className="relative inline-block align-bottom bg-white dark:bg-slate-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div className="bg-white dark:bg-slate-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                    {statusAction === 'markPaid' ? 'Mark Invoice as Paid' : 'Cancel Invoice'}
+                  </h3>
+                  <button
+                    onClick={() => setShowStatusModal(false)}
+                    className="bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg p-2 transition-colors"
+                  >
+                    <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {statusAction === 'markPaid' ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Payment Amount
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={paymentDetails.amount}
+                        onChange={(e) => setPaymentDetails(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Payment Date
+                      </label>
+                      <input
+                        type="date"
+                        value={paymentDetails.paidDate}
+                        onChange={(e) => setPaymentDetails(prev => ({ ...prev, paidDate: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Payment Method
+                      </label>
+                      <select
+                        value={paymentDetails.method}
+                        onChange={(e) => setPaymentDetails(prev => ({ ...prev, method: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      >
+                        {paymentMethods.map(method => (
+                          <option key={method.value} value={method.value}>{method.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Notes (Optional)
+                      </label>
+                      <textarea
+                        value={paymentDetails.info}
+                        onChange={(e) => setPaymentDetails(prev => ({ ...prev, info: e.target.value }))}
+                        rows={3}
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all"
+                        placeholder="Payment reference, transaction ID, etc."
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Are you sure you want to cancel this invoice? This action cannot be undone.
+                    </p>
+                  </div>
+                )}
+
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowStatusModal(false)}
+                    className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={statusAction === 'markPaid' ? handleMarkAsPaid : handleCancelInvoice}
+                    className={`px-4 py-2 text-white rounded-lg transition-colors ${
+                      statusAction === 'markPaid'
+                        ? 'bg-green-600 hover:bg-green-700'
+                        : 'bg-red-600 hover:bg-red-700'
+                    }`}
+                  >
+                    {statusAction === 'markPaid' ? 'Confirm Payment' : 'Confirm Cancellation'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Customer Modal */}
+      {showEditCustomer && editingCustomer && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowEditCustomer(false)}></div>
+
+            <div className="relative inline-block align-bottom bg-white dark:bg-slate-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div className="bg-white dark:bg-slate-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                    Edit Customer
+                  </h3>
+                  <button
+                    onClick={() => setShowEditCustomer(false)}
+                    className="bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg p-2 transition-colors"
+                  >
+                    <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={editingCustomer.name}
+                      onChange={(e) => setEditingCustomer(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="Customer name"
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={editingCustomer.email || ''}
+                      onChange={(e) => setEditingCustomer(prev => ({ ...prev, email: e.target.value }))}
+                      placeholder="customer@example.com"
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      AFM (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={editingCustomer.taxInfo?.afm || ''}
+                      onChange={(e) => setEditingCustomer(prev => ({
+                        ...prev,
+                        taxInfo: { ...prev.taxInfo, afm: e.target.value }
+                      }))}
+                      placeholder="123456789"
+                      maxLength={9}
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Street
+                      </label>
+                      <input
+                        type="text"
+                        value={editingCustomer.address?.street || ''}
+                        onChange={(e) => setEditingCustomer(prev => ({
+                          ...prev,
+                          address: { ...prev.address, street: e.target.value }
+                        }))}
+                        placeholder="Street name"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Number
+                      </label>
+                      <input
+                        type="text"
+                        value={editingCustomer.address?.number || ''}
+                        onChange={(e) => setEditingCustomer(prev => ({
+                          ...prev,
+                          address: { ...prev.address, number: e.target.value }
+                        }))}
+                        placeholder="123"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        City
+                      </label>
+                      <input
+                        type="text"
+                        value={editingCustomer.address?.city || ''}
+                        onChange={(e) => setEditingCustomer(prev => ({
+                          ...prev,
+                          address: { ...prev.address, city: e.target.value }
+                        }))}
+                        placeholder="Athens"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Postal Code
+                      </label>
+                      <input
+                        type="text"
+                        value={editingCustomer.address?.postalCode || ''}
+                        onChange={(e) => setEditingCustomer(prev => ({
+                          ...prev,
+                          address: { ...prev.address, postalCode: e.target.value }
+                        }))}
+                        placeholder="12345"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Prefecture
+                    </label>
+                    <input
+                      type="text"
+                      value={editingCustomer.address?.prefecture || ''}
+                      onChange={(e) => setEditingCustomer(prev => ({
+                        ...prev,
+                        address: { ...prev.address, prefecture: e.target.value }
+                      }))}
+                      placeholder="Attica"
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Phone
+                    </label>
+                    <input
+                      type="text"
+                      value={editingCustomer.phone || ''}
+                      onChange={(e) => setEditingCustomer(prev => ({ ...prev, phone: e.target.value }))}
+                      placeholder="+30 210 1234567"
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowEditCustomer(false)}
+                    className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={updateCustomer}
+                    disabled={!editingCustomer.name?.trim()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Update Customer
                   </button>
                 </div>
               </div>

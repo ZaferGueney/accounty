@@ -7,7 +7,8 @@ const {
   getCompletionStatus,
   validateAFM,
   getTaxOffices,
-  getActivityCodes
+  getActivityCodes,
+  testAADEConnection
 } = require('../controllers/settingsController');
 const { protect } = require('../middleware/auth');
 
@@ -34,5 +35,8 @@ router.get('/validate/afm/:afm', validateAFM);
 // Helper data endpoints
 router.get('/tax-offices', getTaxOffices);
 router.get('/activity-codes', getActivityCodes);
+
+// AADE myDATA connection test
+router.post('/test-aade-connection', testAADEConnection);
 
 module.exports = router;

@@ -34,6 +34,7 @@ const BusinessSettings = () => {
     },
     tax: {
       afm: '',
+      gemi: '',
       doy: { code: '', name: '' },
       activityCodes: [],
       vatRegistered: false,
@@ -257,6 +258,22 @@ const BusinessSettings = () => {
               {afmValidation.isValid && (
                 <p className="text-green-500 text-sm mt-1">AFM is valid ✓</p>
               )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-800 dark:text-white mb-2">
+                GEMI (Γ.Ε.ΜΗ.) Number
+              </label>
+              <input
+                type="text"
+                value={formData.tax.gemi || ''}
+                onChange={(e) => handleInputChange('tax', 'gemi', e.target.value.replace(/\D/g, ''))}
+                className="w-full px-4 py-3 bg-gray-50/80 dark:bg-slate-700/80 border border-gray-300/50 dark:border-slate-600/50 rounded-xl text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50 transition-all"
+                placeholder="General Commercial Registry number"
+              />
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Optional - Company registration number (Γενικό Εμπορικό Μητρώο)
+              </p>
             </div>
 
             <div>

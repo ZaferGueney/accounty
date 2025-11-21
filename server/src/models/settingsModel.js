@@ -55,6 +55,18 @@ const settingsSchema = new mongoose.Schema({
         message: 'AFM must be exactly 9 digits'
       }
     },
+    gemi: {
+      type: String,
+      required: false, // GEMI might not be required for all business types
+      trim: true,
+      validate: {
+        validator: function(v) {
+          if (!v) return true; // Allow empty/null
+          return /^\d+$/.test(v); // GEMI is numeric
+        },
+        message: 'GEMI (Γ.Ε.ΜΗ.) must contain only digits'
+      }
+    },
     doy: {
       code: {
         type: String,
@@ -208,37 +220,8 @@ const settingsSchema = new mongoose.Schema({
     }
   },
 
-  // Banking Information (Required for invoicing)
-  banking: {
-    accountName: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    bankName: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    iban: {
-      type: String,
-      required: true,
-      trim: true,
-      uppercase: true,
-      validate: {
-        validator: function(v) {
-          // Greek IBAN: GR + 2 check digits + 23 alphanumeric = 27 total
-          return /^GR\d{25}$/.test(v.replace(/\s/g, ''));
-        },
-        message: 'Invalid Greek IBAN format (must be GR + 25 digits)'
-      }
-    },
-    swift: {
-      type: String,
-      trim: true,
-      uppercase: true
-    }
-  },
+  // Banking Information - Removed (now in Banking model)
+  // Use Banking.getDefaultBank(userId) to retrieve banking info
 
   // Invoice Settings
   invoicing: {
@@ -292,6 +275,29 @@ const settingsSchema = new mongoose.Schema({
     }
   },
 
+  // AADE myDATA Credentials
+  aadeCredentials: {
+    username: {
+      type: String,
+      trim: true
+    },
+    subscriptionKey: {
+      type: String // Encrypted before saving
+    },
+    environment: {
+      type: String,
+      enum: ['development', 'production'],
+      default: 'development'
+    },
+    isConfigured: {
+      type: Boolean,
+      default: false
+    },
+    lastTested: {
+      type: Date
+    }
+  },
+
   // Completion Status
   isComplete: {
     type: Boolean,
@@ -302,7 +308,6 @@ const settingsSchema = new mongoose.Schema({
     tax: { type: Boolean, default: false },
     address: { type: Boolean, default: false },
     contact: { type: Boolean, default: false },
-    banking: { type: Boolean, default: false },
     invoicing: { type: Boolean, default: false }
   },
   
@@ -322,13 +327,13 @@ const settingsSchema = new mongoose.Schema({
 // Indexes are already created via unique: true constraints above
 
 // Check if settings are complete for invoice creation
+// Note: Banking is now checked separately via Banking model
 settingsSchema.methods.canCreateInvoices = function() {
-  return this.isComplete && 
-         this.completedSteps.business && 
-         this.completedSteps.tax && 
-         this.completedSteps.address && 
-         this.completedSteps.contact && 
-         this.completedSteps.banking;
+  return this.isComplete &&
+         this.completedSteps.business &&
+         this.completedSteps.tax &&
+         this.completedSteps.address &&
+         this.completedSteps.contact;
 };
 
 // Update completion status
@@ -348,10 +353,7 @@ settingsSchema.methods.updateCompletionStatus = function() {
   
   // Check contact completion
   steps.contact = !!(this.contact.phone && this.contact.email);
-  
-  // Check banking completion
-  steps.banking = !!(this.banking.accountName && this.banking.bankName && this.banking.iban);
-  
+
   // Check invoicing completion (optional but included)
   steps.invoicing = true; // Default values are sufficient
   

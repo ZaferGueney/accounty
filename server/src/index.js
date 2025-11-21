@@ -13,6 +13,8 @@ const kadRoutes = require('./routes/kadRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 const clientRoutes = require('./routes/clientRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
+const bankingRoutes = require('./routes/bankingRoutes');
+const externalRoutes = require('./routes/externalRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 7842;
@@ -75,6 +77,8 @@ app.use('/api/kads', kadRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/banking', bankingRoutes);
+app.use('/api/external', externalRoutes);
 
 // Basic health check route
 app.get('/api/health', (req, res) => {

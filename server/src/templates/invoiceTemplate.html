@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{language}}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Invoice {{invoiceNumber}}</title>
+  <title>{{t_invoice}} {{invoiceNumber}}</title>
   <style>
     * {
       margin: 0;
@@ -11,138 +11,227 @@
       box-sizing: border-box;
     }
 
+    @page {
+      size: A4;
+      margin: 15mm;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
       background-color: {{theme.background}};
       color: {{theme.foreground}};
-      line-height: 1.6;
-      font-size: 14px;
+      line-height: 1.4;
+      font-size: 11px;
+      position: relative;
+    }
+
+    /* Preview watermark */
+    .preview-watermark {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-45deg);
+      font-size: 120px;
+      font-weight: 900;
+      color: rgba(200, 200, 200, 0.15);
+      z-index: 9999;
+      pointer-events: none;
+      user-select: none;
+      letter-spacing: 20px;
+      white-space: nowrap;
     }
 
     .container {
-      max-width: 800px;
+      max-width: 210mm;
       margin: 0 auto;
-      padding: 40px 20px;
+      padding: 0;
     }
 
     .header {
       display: flex;
       justify-content: space-between;
       align-items: start;
-      margin-bottom: 40px;
-      padding-bottom: 30px;
-      border-bottom: 2px solid {{theme.border}};
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 2px solid {{theme.accent}};
     }
 
     .logo-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-container {
+      width: 80px;
+      height: 80px;
+      background: {{theme.cardBg}};
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      padding: 8px;
+    }
+
+    .logo-placeholder {
+      width: 80px;
+      height: 80px;
+      background: {{theme.cardBg}};
+      border: 2px dashed {{theme.border}};
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      padding: 8px;
+    }
+
+    .logo-icon {
+      font-size: 32px;
+      opacity: 0.3;
+      color: {{theme.muted}};
+    }
+
+    .logo-text {
+      font-size: 7px;
+      color: {{theme.muted}};
+      text-align: center;
+      margin-top: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .company-info {
       flex: 1;
     }
 
-    .invoice-info {
-      text-align: right;
-      flex: 1;
+    .company-name {
+      font-size: 18px;
+      font-weight: 700;
+      color: {{theme.foreground}};
+      margin-bottom: 6px;
+    }
+
+    .company-details {
+      font-size: 9px;
+      color: {{theme.muted}};
+      line-height: 1.6;
     }
 
     .invoice-title {
-      font-size: 32px;
+      font-size: 24px;
       font-weight: 700;
       color: {{theme.accent}};
-      margin-bottom: 10px;
-      text-transform: uppercase;
-      letter-spacing: -0.5px;
-    }
-
-    .invoice-number {
-      font-size: 18px;
-      font-weight: 600;
-      margin-bottom: 5px;
-    }
-
-    .invoice-date {
-      color: {{theme.muted}};
-      font-size: 14px;
+      letter-spacing: 1px;
     }
 
     .parties {
       display: flex;
-      gap: 40px;
-      margin-bottom: 40px;
+      gap: 20px;
+      margin-bottom: 20px;
     }
 
     .party {
       flex: 1;
       background-color: {{theme.cardBg}};
-      padding: 25px;
-      border-radius: 12px;
+      padding: 12px;
+      border-radius: 6px;
       border: 1px solid {{theme.border}};
     }
 
     .party-title {
-      font-size: 11px;
+      font-size: 9px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       color: {{theme.muted}};
-      margin-bottom: 15px;
+      margin-bottom: 8px;
     }
 
     .party-name {
-      font-size: 18px;
+      font-size: 13px;
       font-weight: 600;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
       color: {{theme.foreground}};
     }
 
     .party-details {
       color: {{theme.muted}};
-      font-size: 13px;
-      line-height: 1.8;
+      font-size: 10px;
+      line-height: 1.5;
     }
 
-    .invoice-meta {
-      display: flex;
-      gap: 20px;
-      margin-bottom: 40px;
-      flex-wrap: wrap;
-    }
-
-    .meta-item {
+    .activity-codes {
       background-color: {{theme.cardBg}};
-      padding: 15px 20px;
-      border-radius: 8px;
+      padding: 8px 12px;
+      border-radius: 6px;
       border: 1px solid {{theme.border}};
-      flex: 1;
-      min-width: 150px;
+      margin-bottom: 15px;
+      font-size: 10px;
     }
 
-    .meta-label {
-      font-size: 11px;
+    .activity-codes-title {
+      font-weight: 600;
       color: {{theme.muted}};
+      font-size: 9px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      margin-bottom: 5px;
+      margin-bottom: 4px;
     }
 
-    .meta-value {
-      font-size: 16px;
+    .activity-codes-list {
+      color: {{theme.foreground}};
+      font-weight: 500;
+    }
+
+    .invoice-details-box {
+      background-color: {{theme.cardBg}};
+      border: 1px solid {{theme.border}};
+      border-radius: 8px;
+      padding: 12px 15px;
+      margin-bottom: 15px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 15px;
+    }
+
+    .detail-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .detail-label {
+      font-size: 8px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: {{theme.muted}};
+      margin-bottom: 4px;
+    }
+
+    .detail-value {
+      font-size: 11px;
       font-weight: 600;
       color: {{theme.foreground}};
     }
 
     .items-table {
       width: 100%;
-      margin-bottom: 40px;
+      margin-bottom: 15px;
       border-collapse: collapse;
+      font-size: 10px;
     }
 
     .items-table th {
       background-color: {{theme.cardBg}};
-      padding: 15px 12px;
+      padding: 8px 6px;
       text-align: left;
-      font-size: 11px;
+      font-size: 9px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.3px;
       color: {{theme.muted}};
       border-bottom: 2px solid {{theme.border}};
     }
@@ -152,8 +241,17 @@
       text-align: right;
     }
 
+    .items-table th:nth-child(3),
+    .items-table td:nth-child(3),
+    .items-table th:nth-child(4),
+    .items-table td:nth-child(4),
+    .items-table th:nth-child(6),
+    .items-table td:nth-child(6) {
+      text-align: center;
+    }
+
     .items-table td {
-      padding: 12px;
+      padding: 6px;
       border-bottom: 1px solid {{theme.border}};
       color: {{theme.foreground}};
     }
@@ -161,72 +259,231 @@
     .totals {
       display: flex;
       justify-content: flex-end;
-      margin-bottom: 40px;
+      margin-bottom: 15px;
     }
 
     .totals-box {
-      width: 350px;
+      width: 280px;
       background-color: {{theme.cardBg}};
-      padding: 25px;
-      border-radius: 12px;
+      padding: 12px;
+      border-radius: 6px;
       border: 1px solid {{theme.border}};
     }
 
     .total-line {
       display: flex;
       justify-content: space-between;
-      padding: 10px 0;
+      padding: 5px 0;
       color: {{theme.muted}};
-      font-size: 14px;
+      font-size: 11px;
     }
 
     .total-line.grand-total {
       border-top: 2px solid {{theme.border}};
-      margin-top: 10px;
-      padding-top: 15px;
-      font-size: 20px;
+      margin-top: 5px;
+      padding-top: 8px;
+      font-size: 15px;
       font-weight: 700;
       color: {{theme.foreground}};
     }
 
     .vat-regulation {
       background-color: {{theme.cardBg}};
-      padding: 20px;
-      border-radius: 8px;
+      padding: 10px;
+      border-radius: 6px;
       border: 1px solid {{theme.border}};
-      margin-bottom: 30px;
-      font-size: 13px;
+      margin-bottom: 15px;
+      font-size: 10px;
       color: {{theme.muted}};
+      display: {{vatRegulationDisplay}};
     }
 
     .vat-regulation-title {
       font-weight: 600;
-      margin-bottom: 5px;
+      margin-bottom: 3px;
       color: {{theme.foreground}};
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
     }
 
     .notes {
       background-color: {{theme.cardBg}};
-      padding: 20px;
-      border-radius: 8px;
+      padding: 10px;
+      border-radius: 6px;
       border: 1px solid {{theme.border}};
-      margin-bottom: 40px;
-      font-size: 13px;
+      margin-bottom: 15px;
+      font-size: 10px;
       color: {{theme.foreground}};
+      display: {{notesDisplay}};
     }
 
     .notes-title {
       font-weight: 600;
+      margin-bottom: 5px;
+      color: {{theme.foreground}};
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .footer-section {
+      margin-top: 15px;
+      padding-top: 12px;
+      border-top: 2px solid {{theme.accent}};
+    }
+
+    .footer-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
       margin-bottom: 10px;
+    }
+
+    .banking-info {
+      flex: 1;
+      background: linear-gradient(135deg, {{theme.cardBg}} 0%, {{theme.background}} 100%);
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid {{theme.border}};
+      border-left: 3px solid {{theme.accent}};
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    .banking-title {
+      font-weight: 700;
+      font-size: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: {{theme.accent}};
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .banking-title::before {
+      content: '🏦';
+      font-size: 10px;
+    }
+
+    .banking-details {
+      font-size: 9px;
+      line-height: 1.7;
       color: {{theme.foreground}};
     }
 
-    .footer {
-      text-align: center;
-      padding-top: 40px;
-      border-top: 1px solid {{theme.border}};
+    .bank-account {
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid {{theme.border}};
+    }
+
+    .bank-account:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .bank-account strong {
+      color: {{theme.foreground}};
+      font-weight: 700;
+      display: block;
+      margin-bottom: 6px;
+      font-size: 10px;
+    }
+
+    .banking-row {
+      margin-bottom: 3px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .banking-label {
       color: {{theme.muted}};
-      font-size: 12px;
+      font-size: 8px;
+      min-width: 90px;
+      font-weight: 600;
+    }
+
+    .banking-value {
+      font-family: 'Courier New', monospace;
+      font-size: 9px;
+      letter-spacing: 0.5px;
+      color: {{theme.foreground}};
+      font-weight: 500;
+    }
+
+    .qr-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .qr-code-box {
+      width: 95px;
+      height: 95px;
+      background: {{theme.cardBg}};
+      border: 2px dashed {{theme.accent}};
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .qr-placeholder-content {
+      text-align: center;
+      color: {{theme.muted}};
+    }
+
+    .qr-icon {
+      font-size: 36px;
+      opacity: 0.4;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .qr-text {
+      font-size: 7px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      line-height: 1.2;
+    }
+
+    .qr-label {
+      font-size: 8px;
+      color: {{theme.muted}};
+      margin-top: 4px;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    .footer-text-section {
+      background-color: {{theme.cardBg}};
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid {{theme.border}};
+      margin-bottom: 15px;
+      font-size: 10px;
+      color: {{theme.foreground}};
+      white-space: pre-line;
+      line-height: 1.6;
+      display: {{footerTextDisplay}};
+    }
+
+    .footer-message {
+      text-align: center;
+      color: {{theme.muted}};
+      font-size: 9px;
+      padding: 8px 0 4px 0;
+      margin-top: 8px;
+      border-top: 1px solid {{theme.border}};
+      font-style: italic;
     }
 
     @media print {
@@ -241,54 +498,60 @@
 </head>
 <body>
   <div class="container">
-    <!-- Header -->
+    <!-- Header with Logo -->
     <div class="header">
       <div class="logo-section">
-        <div class="invoice-title">INVOICE</div>
-        <div style="color: {{theme.muted}}; font-size: 12px;">Professional Services Invoice</div>
-      </div>
-      <div class="invoice-info">
-        <div class="invoice-number">#{{invoiceNumber}}</div>
-        <div class="invoice-date">Issue Date: {{issueDate}}</div>
-        <div class="invoice-date">Due Date: {{dueDate}}</div>
-      </div>
-    </div>
-
-    <!-- Parties -->
-    <div class="parties">
-      <div class="party">
-        <div class="party-title">From</div>
-        <div class="party-name">{{issuer.name}}</div>
-        <div class="party-details">
-          VAT: {{issuer.afm}}<br>
-          Tax Office: {{issuer.doy}}<br>
-          {{issuer.address}}
+        <div class="{{logoContainerClass}}">
+          {{companyLogo}}
+        </div>
+        <div class="company-info">
+          <div class="company-name">{{issuer.name}}</div>
+          <div class="company-details">
+            {{issuer.address}}<br>
+            {{t_vatNumber}}: {{issuer.afm}} | {{t_taxOffice}}: {{issuer.doy}}<br>
+            Γ.Ε.ΜΗ.: {{issuer.gemi}}
+          </div>
         </div>
       </div>
+      <div class="invoice-title">{{t_invoice}}</div>
+    </div>
+
+    <!-- Customer/Recipient -->
+    <div class="parties">
       <div class="party">
-        <div class="party-title">Bill To</div>
+        <div class="party-title">{{t_billTo}}</div>
         <div class="party-name">{{counterpart.name}}</div>
         <div class="party-details">
-          VAT: {{counterpart.afm}}<br>
+          {{t_vatNumber}}: {{counterpart.afm}}<br>
           {{counterpart.address}}
         </div>
       </div>
     </div>
 
-    <!-- Invoice Meta -->
-    <div class="invoice-meta">
-      <div class="meta-item">
-        <div class="meta-label">Series</div>
-        <div class="meta-value">{{series}}</div>
+    <!-- Invoice Details Box -->
+    <div class="invoice-details-box">
+      <div class="detail-item">
+        <div class="detail-label">{{t_invoiceNumber}}</div>
+        <div class="detail-value">{{invoiceNumber}}</div>
       </div>
-      <div class="meta-item">
-        <div class="meta-label">Currency</div>
-        <div class="meta-value">{{currency}}</div>
+      <div class="detail-item">
+        <div class="detail-label">{{t_issueDate}}</div>
+        <div class="detail-value">{{issueDate}}</div>
       </div>
-      <div class="meta-item">
-        <div class="meta-label">Payment Terms</div>
-        <div class="meta-value">Net 30</div>
+      <div class="detail-item">
+        <div class="detail-label">{{t_dueDate}}</div>
+        <div class="detail-value">{{dueDate}}</div>
       </div>
+      <div class="detail-item">
+        <div class="detail-label">{{t_invoiceType}}</div>
+        <div class="detail-value">{{invoiceTypeLabel}}</div>
+      </div>
+    </div>
+
+    <!-- Activity Codes (KAD) -->
+    <div class="activity-codes" style="display: {{activityCodesDisplay}}">
+      <div class="activity-codes-title">{{t_activityCodes}}</div>
+      <div class="activity-codes-list">{{activityCodes}}</div>
     </div>
 
     <!-- Items Table -->
@@ -296,12 +559,12 @@
       <thead>
         <tr>
           <th style="width: 5%;">#</th>
-          <th style="width: 35%;">Description</th>
-          <th style="width: 10%; text-align: center;">Qty</th>
-          <th style="width: 10%; text-align: center;">Unit</th>
-          <th style="width: 15%; text-align: right;">Price</th>
-          <th style="width: 10%; text-align: center;">VAT</th>
-          <th style="width: 15%;">Total</th>
+          <th style="width: 40%;">{{t_description}}</th>
+          <th style="width: 10%;">{{t_quantity}}</th>
+          <th style="width: 10%;">{{t_unit}}</th>
+          <th style="width: 13%;">{{t_price}}</th>
+          <th style="width: 10%;">{{t_vat}}</th>
+          <th style="width: 12%;">{{t_total}}</th>
         </tr>
       </thead>
       <tbody>
@@ -313,37 +576,64 @@
     <div class="totals">
       <div class="totals-box">
         <div class="total-line">
-          <span>Net Total</span>
+          <span>{{t_subtotal}}</span>
           <span>€{{totalNetValue}}</span>
         </div>
         <div class="total-line">
-          <span>VAT Total</span>
+          <span>{{t_vatTotal}}</span>
           <span>€{{totalVatAmount}}</span>
         </div>
         <div class="total-line grand-total">
-          <span>Total Amount</span>
+          <span>{{t_grandTotal}}</span>
           <span>€{{totalAmount}}</span>
         </div>
       </div>
     </div>
 
-    <!-- VAT Regulation -->
+    <!-- VAT Regulation (only show if non-standard) -->
     <div class="vat-regulation">
-      <div class="vat-regulation-title">VAT Regulation</div>
+      <div class="vat-regulation-title">{{t_vatRegulation}}</div>
       {{vatRegulation}}
     </div>
 
     <!-- Notes -->
-    <div class="notes" style="display: {{notesDisplay}}">
-      <div class="notes-title">Notes</div>
+    <div class="notes">
+      <div class="notes-title">{{t_notes}}</div>
       {{notes}}
     </div>
 
-    <!-- Footer -->
-    <div class="footer">
-      <p>Thank you for your business</p>
-      <p style="margin-top: 10px;">Generated with Accounty - Professional Invoicing Software</p>
+    <!-- Footer Text (Custom Message) -->
+    <div class="footer-text-section">{{footerText}}</div>
+
+    <!-- Footer Section -->
+    <div class="footer-section">
+      <div class="footer-content">
+        <!-- Banking Information -->
+        <div class="banking-info" style="display: {{bankingDisplay}};">
+          <div class="banking-title">{{t_bankingInfo}}</div>
+          <div class="banking-details">
+            {{bankingDetailsHTML}}
+          </div>
+        </div>
+
+        <!-- AADE QR Code -->
+        <div class="qr-section">
+          <div class="qr-code-box">
+            {{aadeQRCode}}
+          </div>
+          <div class="mark-box" style="display: {{markDisplay}}; margin-top: 8px; padding: 6px 10px; background: #f8f9fa; border-radius: 4px; text-align: center;">
+            <span style="font-size: 8px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">MARK</span>
+            <div style="font-size: 10px; color: #333; font-family: monospace; margin-top: 2px;">{{aadeMark}}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Thank You Message -->
+      <div class="footer-message">{{t_thankYou}}</div>
     </div>
   </div>
+
+  <!-- Preview Watermark (conditionally added) -->
+  {{previewWatermark}}
 </body>
 </html>

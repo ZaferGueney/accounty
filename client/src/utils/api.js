@@ -222,19 +222,42 @@ export const invoiceAPI = {
   createInvoice: (data) => api.post('/api/invoices', data),
   updateInvoice: (id, data) => api.put(`/api/invoices/${id}`, data),
   deleteInvoice: (id) => api.delete(`/api/invoices/${id}`),
+  cancelAADEInvoice: (id) => api.post(`/api/invoices/${id}/cancel-aade`),
   markInvoicePaid: (id, data) => api.post(`/api/invoices/${id}/pay`, data),
   getInvoiceStats: (params = {}) => api.get('/api/invoices/stats', { params }),
   getNextInvoiceNumber: (params = {}) => api.get('/api/invoices/next-number', { params }),
-  previewInvoice: async (data, theme = 'light') => {
-    // For now, server returns JSON since PDF generation is not implemented
-    const response = await api.post('/api/invoices/preview?theme=' + theme, data);
-    
-    // Create blob URL for the PDF
-    const blob = new Blob([response.data], { type: 'application/pdf' });
-    const pdfUrl = window.URL.createObjectURL(blob);
-    
-    return { data: { success: true, pdfUrl } };
+  previewInvoice: async (data, theme = 'light', language = 'en') => {
+    // Request PDF as blob
+    const response = await api.post(`/api/invoices/preview?theme=${theme}&lang=${language}`, data, {
+      responseType: 'blob'
+    });
+
+    return response;
   }
+};
+
+// Banking API
+export const bankingAPI = {
+  getBanks: () => api.get('/api/banking'),
+  getBank: (id) => api.get(`/api/banking/${id}`),
+  getDefaultBank: () => api.get('/api/banking/default'),
+  createBank: (data) => api.post('/api/banking', data),
+  updateBank: (id, data) => api.put(`/api/banking/${id}`, data),
+  deleteBank: (id) => api.delete(`/api/banking/${id}`),
+  setDefaultBank: (id) => api.put(`/api/banking/${id}/set-default`)
+};
+
+// Settings API
+export const settingsAPI = {
+  getSettings: () => api.get('/api/settings'),
+  createSettings: (data) => api.post('/api/settings', data),
+  updateSettings: (data) => api.put('/api/settings', data),
+  updateSection: (section, data) => api.put(`/api/settings/section/${section}`, data),
+  getCompletionStatus: () => api.get('/api/settings/completion'),
+  validateAFM: (afm) => api.get(`/api/settings/validate/afm/${afm}`),
+  getTaxOffices: () => api.get('/api/settings/tax-offices'),
+  getActivityCodes: () => api.get('/api/settings/activity-codes'),
+  testAADEConnection: () => api.post('/api/settings/test-aade-connection')
 };
 
 // Health check

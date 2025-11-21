@@ -565,10 +565,10 @@ If you're getting 404 errors for `/api/invoices/*` or `/api/customers/*` endpoin
 - User and settings caching
 
 ### 🔄 In Progress
-- PDF generation debugging and optimization
 - AADE integration for Greek tax compliance
 - Invoice filtering and advanced search
 - Client.jsx component for accountant mode UI
+- Logo upload UI in settings component
 
 ### 📅 Planned Features
 - Stripe subscription integration
@@ -738,6 +738,120 @@ Comprehensive logging system tracks:
 
 ---
 
-**Last Updated**: November 2024  
-**Version**: 1.3.0-beta (PDF Generation & Accountant Mode)  
+## 📄 Invoice System Improvements (November 2024)
+
+### Template Redesign
+Complete overhaul of the invoice PDF template with professional layout matching Greek accounting standards:
+
+**New Layout Structure:**
+```
+┌─────────────────────────────────────────────┐
+│ [LOGO]  Company Name & Details              │
+│         Address, AFM, DOY                    │
+├─────────────────────────────────────────────┤
+│ Customer Information                         │
+├─────────────────────────────────────────────┤
+│ Invoice Details (Number, Dates, Type)       │
+├─────────────────────────────────────────────┤
+│ Items Table with Additional Description     │
+├─────────────────────────────────────────────┤
+│                         Totals     →         │
+├─────────────────────────────────────────────┤
+│ Notes (if any)                               │
+│ Custom Footer Text (multilingual)           │
+├─────────────────────────────────────────────┤
+│ Banking Info  │ AADE QR Code                 │
+└─────────────────────────────────────────────┘
+```
+
+### Features Added
+
+**1. Company Logo Placeholder**
+- 80x80px logo area in header
+- Placeholder with visual indicator when no logo uploaded
+- Ready for future logo upload implementation
+- Logo field already exists in Settings.branding.logo
+
+**2. Custom Footer Text**
+- Fully customizable footer message per invoice
+- Supports multiline text with preserved formatting
+- Saved in invoice model (footerText field)
+- Default German text: "Vielen Dank für Ihren Auftrag!..."
+- Can be edited in InvoiceEdit component
+
+**3. Professional Layout**
+- Moved invoice details (number, dates, type) to prominent box between customer and items
+- Company info displayed in header with logo
+- Cleaner, more organized visual hierarchy
+- Matches professional Greek accounting invoice standards
+
+**4. Streamlined UI**
+- Removed series selector from InvoiceEdit form
+- Invoice numbers remain automatic (e.g., A20250001)
+- Series still stored in backend for future functionality
+- Reduced form fields from 5 to 4 columns for better spacing
+
+### Bug Fixes
+
+**1. Draft Saving Issue - FIXED**
+- Updated `allowedUpdates` in invoiceController.js
+- Now allows saving: footerText, vatRegulation, invoiceType, series, issueDate, totals
+- Draft changes now persist correctly to database
+
+**2. Footer Text Not Rendering - FIXED**
+- Added `{{footerText}}` placeholder to PDF template
+- Added `{{footerTextDisplay}}` for conditional display
+- PDF service now processes footerText field
+- Footer text appears in all generated PDFs
+
+**3. Notes Not Showing - VERIFIED WORKING**
+- Notes section already functional
+- Only displays when notes field has content
+- `{{notesDisplay}}` controls visibility correctly
+
+### Technical Implementation
+
+**Modified Files:**
+1. `server/src/controllers/invoiceController.js`
+   - Expanded allowedUpdates array (line 269-272)
+   - Added fields: footerText, vatRegulation, invoiceType, series, issueDate, totals
+
+2. `server/src/templates/invoiceTemplate.html`
+   - Added logo-placeholder styles (lines 65-92)
+   - Added company-info styles (lines 94-109)
+   - Added invoice-details-box styles (lines 177-206)
+   - Added footer-text-section styles (lines 437-448)
+   - Restructured HTML layout with new header and detail boxes
+
+3. `server/src/services/pdfService.js`
+   - Added invoice type translations (EN/EL/DE)
+   - Added `companyLogo` placeholder generation
+   - Added `footerText` and `footerTextDisplay` handling
+   - Added `invoiceTypeLabel` translation
+   - Added `t_invoiceType` translation key
+
+4. `client/src/components/InvoiceEdit.jsx`
+   - Removed seriesOptions constant (lines 159-164 deleted)
+   - Removed series selector UI (lines 762-773 deleted)
+   - Changed grid from 5 to 4 columns
+   - Footer text textarea already present and functional
+
+### Database Schema
+No changes required - all fields already exist:
+- `Invoice.footerText` (String, with default)
+- `Invoice.series` (String, default: 'A')
+- `Invoice.vatRegulation` (String, enum)
+- `Invoice.invoiceType` (String, enum)
+- `Settings.branding.logo` (String, URL or base64)
+
+### Future Enhancements
+- Logo upload UI in settings component
+- Logo display in invoice edit preview
+- Additional footer text templates
+- Custom invoice numbering schemes
+
+---
+
+**Last Updated**: November 16, 2024
+**Version**: 1.4.0-beta (Invoice System Redesign)
 **Maintainer**: Development Team

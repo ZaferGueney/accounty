@@ -1,6 +1,34 @@
 const Settings = require('../models/settingsModel');
 const User = require('../models/userModel');
 const { redisUtils } = require('../config/redis');
+const crypto = require('crypto');
+const aadeService = require('../services/aadeService');
+
+// Encryption key for AADE subscription key (use environment variable in production)
+const ENCRYPTION_KEY = process.env.AADE_ENCRYPTION_KEY || 'accounty-aade-encryption-key-2024-change-in-prod';
+const ALGORITHM = 'aes-256-cbc';
+
+// Encrypt AADE subscription key
+const encryptKey = (text) => {
+  const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32);
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
+};
+
+// Decrypt AADE subscription key
+const decryptKey = (encryptedText) => {
+  const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32);
+  const parts = encryptedText.split(':');
+  const iv = Buffer.from(parts[0], 'hex');
+  const encrypted = parts[1];
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+};
 
 // Helper function to check if a step is complete
 const checkStepCompletion = (step, data) => {
@@ -8,15 +36,13 @@ const checkStepCompletion = (step, data) => {
     case 'business':
       return !!(data.legalName && data.legalForm);
     case 'tax':
-      return !!(data.afm && data.doy?.code && data.doy?.name && 
+      return !!(data.afm && data.doy?.code && data.doy?.name &&
                 data.activityCodes && data.activityCodes.length > 0);
     case 'address':
-      return !!(data.street && data.number && 
+      return !!(data.street && data.number &&
                 data.city && data.postalCode && data.prefecture);
     case 'contact':
       return !!(data.phone && data.email);
-    case 'banking':
-      return !!(data.accountName && data.bankName && data.iban);
     case 'invoicing':
       return true; // Has defaults
     default:
@@ -35,21 +61,29 @@ const getSettings = async (req, res) => {
     if (!settings) {
       // If not in cache, get from database
       settings = await Settings.findOne({ userId });
-      
+
       if (!settings) {
         return res.status(404).json({
           success: false,
           message: 'Settings not found'
         });
       }
-      
+
       // Cache the settings
       await redisUtils.setSettingsCache(userId, settings, 1800); // Cache for 30 minutes
     }
 
+    // Mask AADE subscription key for security (don't send encrypted key to frontend)
+    // Check if settings is Mongoose document or plain object (from cache)
+    const settingsData = settings.toObject ? settings.toObject() : settings;
+    if (settingsData.aadeCredentials?.subscriptionKey) {
+      settingsData.aadeCredentials.subscriptionKeyMasked = '****' + settingsData.aadeCredentials.subscriptionKey.slice(-8);
+      delete settingsData.aadeCredentials.subscriptionKey;
+    }
+
     res.status(200).json({
       success: true,
-      data: settings
+      data: settingsData
     });
   } catch (error) {
     console.error('Get settings error:', error);
@@ -172,13 +206,26 @@ const updateSection = async (req, res) => {
   try {
     const { section } = req.params;
     const userId = req.user.userId || req.user._id;
-    const allowedSections = ['business', 'tax', 'address', 'contact', 'banking', 'invoicing', 'branding'];
-    
+    const allowedSections = ['business', 'tax', 'address', 'contact', 'invoicing', 'branding', 'aadeCredentials'];
+
     if (!allowedSections.includes(section)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid section'
       });
+    }
+
+    // Handle AADE credentials encryption
+    if (section === 'aadeCredentials' && req.body.subscriptionKey) {
+      try {
+        req.body.subscriptionKey = encryptKey(req.body.subscriptionKey);
+        req.body.isConfigured = true;
+      } catch (encryptError) {
+        return res.status(500).json({
+          success: false,
+          message: 'Error encrypting AADE credentials'
+        });
+      }
     }
 
     let settings = await Settings.findOne({ userId });
@@ -195,7 +242,6 @@ const updateSection = async (req, res) => {
           tax: false,
           address: false,
           contact: false,
-          banking: false,
           invoicing: false
         },
         invoicing: {
@@ -217,29 +263,34 @@ const updateSection = async (req, res) => {
       const result = await Settings.collection.insertOne(newSettingsData);
       settings = await Settings.findById(result.insertedId);
     } else {
-      // Update specific section
-      settings[section] = { ...settings[section], ...req.body };
-      
+      // Convert Mongoose document to plain object to avoid subdocument issues
+      const settingsObj = settings.toObject();
+      const existingSection = settingsObj[section] || {};
+
+      // Merge existing section with new data
+      const updatedSection = { ...existingSection, ...req.body };
+
       // Manually update completion status since we're bypassing the pre-save hook
-      const isStepComplete = checkStepCompletion(section, settings[section]);
-      settings.completedSteps[section] = isStepComplete;
-      
+      const isStepComplete = checkStepCompletion(section, updatedSection);
+
       // Check overall completion
-      settings.isComplete = Object.values(settings.completedSteps).every(step => step === true);
-      
+      const updatedCompletedSteps = { ...settings.completedSteps.toObject() };
+      updatedCompletedSteps[section] = isStepComplete;
+      const isComplete = Object.values(updatedCompletedSteps).every(step => step === true);
+
       // Update in database
       await Settings.updateOne(
-        { userId }, 
-        { 
-          $set: { 
-            [section]: settings[section],
+        { userId },
+        {
+          $set: {
+            [section]: updatedSection,
             [`completedSteps.${section}`]: isStepComplete,
-            isComplete: settings.isComplete,
+            isComplete: isComplete,
             updatedAt: new Date()
-          } 
+          }
         }
       );
-      
+
       // Refresh from database to ensure consistency
       settings = await Settings.findOne({ userId });
     }
@@ -297,7 +348,6 @@ const getCompletionStatus = async (req, res) => {
             tax: false,
             address: false,
             contact: false,
-            banking: false,
             invoicing: false
           },
           nextStep: 'business'
@@ -307,19 +357,18 @@ const getCompletionStatus = async (req, res) => {
 
     // Determine next incomplete step
     const steps = settings.completedSteps;
-    const stepOrder = ['business', 'tax', 'address', 'contact', 'banking', 'invoicing'];
+    const stepOrder = ['business', 'tax', 'address', 'contact', 'invoicing'];
     const nextStep = stepOrder.find(step => !steps[step]) || null;
 
     res.status(200).json({
       success: true,
       data: {
         isComplete: settings.isComplete,
-        canCreateInvoices: settings.isComplete && 
-                         settings.completedSteps.business && 
-                         settings.completedSteps.tax && 
-                         settings.completedSteps.address && 
-                         settings.completedSteps.contact && 
-                         settings.completedSteps.banking,
+        canCreateInvoices: settings.isComplete &&
+                         settings.completedSteps.business &&
+                         settings.completedSteps.tax &&
+                         settings.completedSteps.address &&
+                         settings.completedSteps.contact,
         completedSteps: settings.completedSteps,
         nextStep
       }
@@ -535,6 +584,74 @@ const getActivityCodes = async (req, res) => {
   }
 };
 
+// Test AADE myDATA connection
+const testAADEConnection = async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user._id;
+
+    const settings = await Settings.findOne({ userId });
+
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'Settings not found'
+      });
+    }
+
+    if (!settings.aadeCredentials?.isConfigured ||
+        !settings.aadeCredentials?.username ||
+        !settings.aadeCredentials?.subscriptionKey) {
+      return res.status(400).json({
+        success: false,
+        message: 'AADE credentials not configured'
+      });
+    }
+
+    try {
+      // Decrypt subscription key
+      const decryptedKey = decryptKey(settings.aadeCredentials.subscriptionKey);
+
+      // Test connection with user's credentials
+      const userCredentials = {
+        username: settings.aadeCredentials.username,
+        subscriptionKey: decryptedKey,
+        environment: settings.aadeCredentials.environment || 'development'
+      };
+
+      // Use the testConnection method from aadeService
+      const testResult = await aadeService.testConnection();
+
+      // Update lastTested timestamp
+      settings.aadeCredentials.lastTested = new Date();
+      await settings.save();
+
+      // Update cache
+      await redisUtils.setSettingsCache(userId, settings, 1800);
+
+      res.status(200).json({
+        success: true,
+        message: 'AADE connection test completed',
+        data: testResult
+      });
+
+    } catch (decryptError) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error decrypting AADE credentials',
+        error: decryptError.message
+      });
+    }
+
+  } catch (error) {
+    console.error('Test AADE connection error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error testing AADE connection',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getSettings,
   createSettings,
@@ -543,5 +660,6 @@ module.exports = {
   getCompletionStatus,
   validateAFM,
   getTaxOffices,
-  getActivityCodes
+  getActivityCodes,
+  testAADEConnection
 };

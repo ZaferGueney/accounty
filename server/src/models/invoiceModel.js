@@ -76,10 +76,29 @@ const invoiceSchema = new mongoose.Schema({
       '2.3', // Τιμολόγιο Παροχής / Παροχή Υπηρεσιών σε λήπτη Τρίτης Χώρας
       '2.4', // Τιμολόγιο Παροχής / Συμπληρωματικό Παραστατικό
       '5.1', // Πιστωτικό Τιμολόγιο / Συσχετιζόμενο
-      '5.2'  // Πιστωτικό Τιμολόγιο / Μη Συσχετιζόμενο
+      '5.2', // Πιστωτικό Τιμολόγιο / Μη Συσχετιζόμενο
+      '11.1', // Απόδειξη Λιανικής Πώλησης (Retail Sales Receipt)
+      '11.2'  // Απόδειξη Παροχής Υπηρεσιών (Retail Service Receipt)
     ],
     required: true,
     default: '2.1' // Service invoice (most common for accounting services)
+  },
+
+  // Source of the invoice (for tracking external integrations)
+  source: {
+    type: String,
+    enum: ['manual', 'guestcode', 'api'],
+    default: 'manual'
+  },
+
+  // External reference IDs (for integrations like GuestCode)
+  externalId: {
+    type: String,  // e.g., Stripe session ID
+    sparse: true
+  },
+  externalOrderId: {
+    type: String,  // e.g., GuestCode order _id
+    sparse: true
   },
 
   // Parties
@@ -101,6 +120,10 @@ const invoiceSchema = new mongoose.Schema({
       type: String,
       required: true
     },
+    legalForm: {
+      type: String,
+      enum: ['individual', 'oe', 'ee', 'epe', 'ae', 'ike', 'other']
+    },
     address: {
       street: String,
       number: String,
@@ -120,7 +143,8 @@ const invoiceSchema = new mongoose.Schema({
       doy: {
         code: String,
         name: String
-      }
+      },
+      gemi: String
     }
   },
 
@@ -405,6 +429,10 @@ const invoiceSchema = new mongoose.Schema({
     trim: true,
     default: 'Vielen Dank für Ihren Auftrag!\nBei Fragen stehen wir Ihnen gerne zur Verfügung.\n\nMit freundlichen Grüßen'
   },
+  hideBankDetails: {
+    type: Boolean,
+    default: false
+  },
   currency: {
     type: String,
     enum: ['EUR', 'USD', 'GBP'],
@@ -527,22 +555,22 @@ invoiceSchema.pre('save', function(next) {
 
 // Static method to generate next invoice number
 invoiceSchema.statics.generateInvoiceNumber = async function(userId, series = 'A') {
-  const currentYear = new Date().getFullYear();
-  
-  // Find the highest invoice number for this user, series, and year
+  // Find the highest invoice number for this user and series (no year)
   const lastInvoice = await this.findOne({
     userId,
     series,
-    invoiceNumber: new RegExp(`^${series}${currentYear}`)
+    invoiceNumber: new RegExp(`^${series}\\d{4}$`) // Match series + exactly 4 digits (A0001, A0002, etc.)
   }).sort({ invoiceNumber: -1 });
 
   let nextNumber = 1;
   if (lastInvoice) {
-    const lastNumber = parseInt(lastInvoice.invoiceNumber.replace(`${series}${currentYear}`, ''));
+    // Extract number after series (e.g., "A0001" -> "0001" -> 1)
+    const lastNumber = parseInt(lastInvoice.invoiceNumber.replace(series, ''));
     nextNumber = lastNumber + 1;
   }
 
-  return `${series}${currentYear}${nextNumber.toString().padStart(4, '0')}`;
+  // Return format: A0001, A0002, etc. (no year)
+  return `${series}${nextNumber.toString().padStart(4, '0')}`;
 };
 
 // Static method to find invoices by user

@@ -31,27 +31,14 @@ const DashboardNavigation = () => {
     return () => router.events.off('routeChangeStart', handleRouteChange);
   }, [router.events]);
 
-  const menuItems = [
+  // Build menu items based on user role
+  const baseMenuItems = [
     {
       key: 'dashboard',
       title: t('dashboard'),
       icon: '🏠',
       href: '/dashboard',
       description: t('dashboardDescription')
-    },
-    {
-      key: 'settings',
-      title: t('settings'),
-      icon: '⚙️',
-      href: '/settings',
-      description: t('settingsDescription')
-    },
-    {
-      key: 'kads',
-      title: 'KAD Management',
-      icon: '📋',
-      href: '/kads',
-      description: 'Manage Greek Activity Codes'
     },
     {
       key: 'invoices',
@@ -61,11 +48,27 @@ const DashboardNavigation = () => {
       description: t('invoicesDescription')
     },
     {
+      key: 'customers',
+      title: t('customers'),
+      icon: '👤',
+      href: '/customers',
+      description: t('customersDescription'),
+      showIf: !user?.isAccountant // Show for regular users
+    },
+    {
       key: 'clients',
       title: t('clients'),
       icon: '👥',
       href: '/clients',
-      description: t('clientsDescription')
+      description: t('clientsDescription'),
+      showIf: user?.isAccountant // Only show for accountants
+    },
+    {
+      key: 'kads',
+      title: 'KAD Management',
+      icon: '📋',
+      href: '/kads',
+      description: 'Manage Greek Activity Codes'
     },
     {
       key: 'reports',
@@ -73,8 +76,18 @@ const DashboardNavigation = () => {
       icon: '📊',
       href: '/reports',
       description: t('reportsDescription')
+    },
+    {
+      key: 'settings',
+      title: t('settings'),
+      icon: '⚙️',
+      href: '/settings',
+      description: t('settingsDescription')
     }
   ];
+
+  // Filter menu items based on showIf condition
+  const menuItems = baseMenuItems.filter(item => item.showIf !== false);
 
   const handleLogout = async () => {
     setIsMenuOpen(false);

@@ -10,7 +10,8 @@ const {
   markInvoicePaid,
   getInvoiceStats,
   getNextInvoiceNumber,
-  previewInvoice
+  previewInvoice,
+  cancelAADEInvoice
 } = require('../controllers/invoiceController');
 
 // Protect all routes
@@ -33,5 +34,6 @@ router.route('/:id')
 
 // Action routes
 router.post('/:id/pay', markInvoicePaid);
+router.post('/:id/cancel-aade', cancelAADEInvoice);
 
 module.exports = router;
