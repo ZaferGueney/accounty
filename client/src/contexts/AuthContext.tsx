@@ -10,6 +10,7 @@ interface User {
   lastName: string;
   fullName: string;
   company?: string;
+  isAccountant?: boolean;
   subscription: {
     plan: 'free' | 'basic' | 'premium';
     status: 'active' | 'inactive' | 'canceled' | 'expired';
