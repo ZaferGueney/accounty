@@ -23,7 +23,8 @@ import KADSelector from '@/components/KADSelector';
 const Setup = () => {
   const { t } = useTranslation('common');
   const router = useRouter();
-  const dispatch = useAppDispatch();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dispatch = useAppDispatch() as any;
   
   const settings = useAppSelector(selectSettings);
   const completionStatus = useAppSelector(selectCompletionStatus);

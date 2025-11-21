@@ -21,6 +21,6 @@ export const store = configureStore({
   devTools: process.env.NODE_ENV !== 'production',
 });
 
-// TypeScript types would go here if using .ts file
-// export type RootState = ReturnType<typeof store.getState>;
-// export type AppDispatch = typeof store.dispatch;
+// Export types for TypeScript
+export const RootState = store.getState;
+export const AppDispatch = store.dispatch;
