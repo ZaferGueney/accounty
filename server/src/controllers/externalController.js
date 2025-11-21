@@ -186,10 +186,11 @@ const createReceipt = async (req, res) => {
     // Submit to AADE
     let aadeResult = null;
     try {
-      // Get AADE credentials
+      // Get AADE credentials based on environment
+      const isProduction = process.env.NODE_ENV === 'production';
       const aadeCredentials = {
-        username: settings.aade?.userId || process.env.AADE_PROD_USER_ID || process.env.AADE_DEV_USER_ID,
-        subscriptionKey: settings.aade?.subscriptionKey || process.env.AADE_PROD_KEY || process.env.AADE_DEV_KEY
+        username: settings.aade?.userId || (isProduction ? process.env.AADE_PROD_USER_ID : process.env.AADE_DEV_USER_ID),
+        subscriptionKey: settings.aade?.subscriptionKey || (isProduction ? process.env.AADE_PROD_KEY : process.env.AADE_DEV_KEY)
       };
 
       if (!aadeCredentials.username || !aadeCredentials.subscriptionKey) {
@@ -599,9 +600,11 @@ const createInvoice = async (req, res) => {
     // Submit to AADE
     let aadeResult = null;
     try {
+      // Get AADE credentials based on environment
+      const isProduction = process.env.NODE_ENV === 'production';
       const aadeCredentials = {
-        username: settings.aade?.userId || process.env.AADE_PROD_USER_ID || process.env.AADE_DEV_USER_ID,
-        subscriptionKey: settings.aade?.subscriptionKey || process.env.AADE_PROD_KEY || process.env.AADE_DEV_KEY
+        username: settings.aade?.userId || (isProduction ? process.env.AADE_PROD_USER_ID : process.env.AADE_DEV_USER_ID),
+        subscriptionKey: settings.aade?.subscriptionKey || (isProduction ? process.env.AADE_PROD_KEY : process.env.AADE_DEV_KEY)
       };
 
       if (aadeCredentials.username && aadeCredentials.subscriptionKey) {

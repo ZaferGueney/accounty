@@ -30,17 +30,18 @@ const decryptKey = (encryptedText) => {
 // @access  Private
 const getInvoices = async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      status, 
-      clientId, 
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      clientId,
       customerId,
       startDate,
       endDate,
-      aadeStatus 
+      aadeStatus,
+      series
     } = req.query;
-    
+
     const userId = req.user.userId;
     let query = { userId };
 
@@ -49,6 +50,7 @@ const getInvoices = async (req, res) => {
     if (clientId) query.clientId = clientId;
     if (customerId) query.customerId = customerId;
     if (aadeStatus) query.aadeStatus = aadeStatus;
+    if (series) query.series = series;
     
     // Date range filter
     if (startDate || endDate) {

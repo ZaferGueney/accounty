@@ -27,6 +27,7 @@ const Invoice = () => {
   const [stats, setStats] = useState(null);
   const [showInvoiceEdit, setShowInvoiceEdit] = useState(false);
   const [editingInvoiceId, setEditingInvoiceId] = useState(null);
+  const [activeTab, setActiveTab] = useState('invoices'); // 'invoices' or 'receipts'
 
   // Fetch invoices
   const fetchInvoices = async () => {
@@ -35,9 +36,11 @@ const Invoice = () => {
       const params = {
         page: pagination.page,
         limit: pagination.limit,
-        ...filters
+        ...filters,
+        // Filter by series based on active tab
+        series: activeTab === 'receipts' ? 'R' : 'A'
       };
-      
+
       const response = await invoiceAPI.getInvoices(params);
       if (response.data.success) {
         setInvoices(response.data.invoices);
@@ -69,7 +72,7 @@ const Invoice = () => {
   useEffect(() => {
     fetchInvoices();
     fetchStats();
-  }, [pagination.page, filters]);
+  }, [pagination.page, filters, activeTab]);
 
   const handleFilterChange = (newFilters) => {
     setFilters(newFilters);
@@ -133,16 +136,18 @@ const Invoice = () => {
               {t('invoicesDescription')}
             </p>
           </div>
-          
-          <button
-            onClick={handleCreateInvoice}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium rounded-xl transition-all duration-200 shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            {t('invoice.createNewInvoice')}
-          </button>
+
+          {activeTab === 'invoices' && (
+            <button
+              onClick={handleCreateInvoice}
+              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium rounded-xl transition-all duration-200 shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              {t('invoice.createNewInvoice')}
+            </button>
+          )}
         </div>
 
         {/* Stats Cards - Compact Header Style */}
@@ -178,6 +183,36 @@ const Invoice = () => {
         )}
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => {
+            setActiveTab('invoices');
+            setPagination(prev => ({ ...prev, page: 1 }));
+          }}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+            activeTab === 'invoices'
+              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          {t('invoices')}
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab('receipts');
+            setPagination(prev => ({ ...prev, page: 1 }));
+          }}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+            activeTab === 'receipts'
+              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          {t('receipts') || 'Receipts'}
+        </button>
+      </div>
+
       {/* Filter */}
       <InvoiceFilter onFilterChange={handleFilterChange} filters={filters} />
 
@@ -199,21 +234,27 @@ const Invoice = () => {
             <svg className="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            <h3 className="mt-2 text-sm font-medium text-slate-900 dark:text-white">No invoices</h3>
+            <h3 className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
+              {activeTab === 'invoices' ? 'No invoices' : 'No receipts'}
+            </h3>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Get started by creating a new invoice.
+              {activeTab === 'invoices'
+                ? 'Get started by creating a new invoice.'
+                : 'Receipts from GuestCode ticket sales will appear here.'}
             </p>
-            <div className="mt-6">
-              <button
-                onClick={handleCreateInvoice}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-              >
-                <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Create Invoice
-              </button>
-            </div>
+            {activeTab === 'invoices' && (
+              <div className="mt-6">
+                <button
+                  onClick={handleCreateInvoice}
+                  className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                >
+                  <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create Invoice
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
