@@ -2,24 +2,26 @@ import axios from 'axios';
 
 // Get API base URL dynamically
 export const getApiBaseUrl = () => {
-  if (typeof window === 'undefined') {
-    // Server-side: use localhost
-    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7842';
-  }
-  
-  // Client-side: use environment variable or construct from current domain
+  // Always prefer environment variable if set
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
   }
-  
-  // For production, use same domain with different port or subdomain
+
+  if (typeof window === 'undefined') {
+    // Server-side: use localhost as fallback
+    return 'http://localhost:7842';
+  }
+
+  // Client-side fallback for local development
   const { protocol, hostname } = window.location;
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return `${protocol}//${hostname}:7842`;
   }
-  
-  // For production deployment
-  return `${protocol}//api.${hostname}`;
+
+  // Production: NEXT_PUBLIC_API_URL must be set
+  // This will cause an error if not configured, which is intentional
+  console.error('NEXT_PUBLIC_API_URL environment variable is not set for production');
+  return '';
 };
 
 // Create axios instance
