@@ -3,13 +3,13 @@ import { useTranslation } from 'next-i18next';
 import { useRouter } from 'next/router';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import {
-  fetchSettings,
-  fetchCompletionStatus,
-  updateSection,
-  updateSettings,
-  fetchTaxOffices,
-  fetchActivityCodes,
-  validateAFM,
+  fetchSettings as _fetchSettings,
+  fetchCompletionStatus as _fetchCompletionStatus,
+  updateSection as _updateSection,
+  updateSettings as _updateSettings,
+  fetchTaxOffices as _fetchTaxOffices,
+  fetchActivityCodes as _fetchActivityCodes,
+  validateAFM as _validateAFM,
   selectSettings,
   selectCompletionStatus,
   selectTaxOffices,
@@ -17,14 +17,22 @@ import {
   selectSettingsSaving,
   selectAFMValidation
 } from '@/store/slices/settingsSlice';
+
+// Cast thunks to any to avoid TypeScript errors with JS slice
+const fetchSettings = _fetchSettings as any;
+const fetchCompletionStatus = _fetchCompletionStatus as any;
+const updateSection = _updateSection as any;
+const updateSettings = _updateSettings as any;
+const fetchTaxOffices = _fetchTaxOffices as any;
+const fetchActivityCodes = _fetchActivityCodes as any;
+const validateAFM = _validateAFM as any;
 import DashboardNavigation from '@/components/DashboardNavigation';
 import KADSelector from '@/components/KADSelector';
 
 const Setup = () => {
   const { t } = useTranslation('common');
   const router = useRouter();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const dispatch = useAppDispatch() as any;
+  const dispatch = useAppDispatch();
   
   const settings = useAppSelector(selectSettings);
   const completionStatus = useAppSelector(selectCompletionStatus);
