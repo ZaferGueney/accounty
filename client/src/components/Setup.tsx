@@ -229,16 +229,19 @@ const Setup = () => {
   };
 
   const handleNestedInputChange = (section: string, parent: string, field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        [parent]: {
-          ...prev[section][parent],
-          [field]: value
+    setFormData(prev => {
+      const sectionData = prev[section as keyof typeof prev] as any;
+      return {
+        ...prev,
+        [section]: {
+          ...sectionData,
+          [parent]: {
+            ...sectionData[parent],
+            [field]: value
+          }
         }
-      }
-    }));
+      };
+    });
   };
 
   const handleAFMChange = (value: string) => {
@@ -254,9 +257,9 @@ const Setup = () => {
     try {
       setIsNavigating(true);
       
-      await dispatch(updateSection({ 
-        section: currentStepKey, 
-        data: formData[currentStepKey] 
+      await dispatch(updateSection({
+        section: currentStepKey,
+        data: formData[currentStepKey as keyof typeof formData]
       })).unwrap();
       
       if (currentStep < steps.length - 1) {
@@ -296,8 +299,8 @@ const Setup = () => {
 
   const isStepValid = () => {
     const step = steps[currentStep];
-    const data = formData[step.key];
-    
+    const data = formData[step.key as keyof typeof formData] as any;
+
     switch (step.key) {
       case 'business':
         return data.legalName && data.legalForm;

@@ -91,23 +91,26 @@ const BusinessSettings = () => {
     setFormData(prev => ({
       ...prev,
       [section]: {
-        ...prev[section],
+        ...(prev[section as keyof typeof prev] as any),
         [field]: value
       }
     }));
   };
 
   const handleNestedInputChange = (section: string, parent: string, field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        [parent]: {
-          ...prev[section][parent],
-          [field]: value
+    setFormData(prev => {
+      const sectionData = prev[section as keyof typeof prev] as any;
+      return {
+        ...prev,
+        [section]: {
+          ...sectionData,
+          [parent]: {
+            ...sectionData[parent],
+            [field]: value
+          }
         }
-      }
-    }));
+      };
+    });
   };
 
   const handleAFMChange = (value: string) => {
@@ -133,9 +136,9 @@ const BusinessSettings = () => {
 
   const handleSave = async (section: string) => {
     try {
-      await dispatch(updateSection({ 
-        section, 
-        data: formData[section] 
+      await dispatch(updateSection({
+        section,
+        data: formData[section as keyof typeof formData]
       })).unwrap();
       showMessage('success', `${section.charAt(0).toUpperCase() + section.slice(1)} information updated successfully`);
     } catch (error) {
