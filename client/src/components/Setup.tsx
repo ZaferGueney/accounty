@@ -158,9 +158,9 @@ const Setup = () => {
       if (hasInitialized && !isNavigating) {
         const currentStepKey = steps[currentStep].key;
         try {
-          await dispatch(updateSection({ 
-            section: currentStepKey, 
-            data: formData[currentStepKey] 
+          await dispatch(updateSection({
+            section: currentStepKey,
+            data: formData[currentStepKey as keyof typeof formData]
           })).unwrap();
         } catch (error) {
           // Auto-save failed silently
@@ -175,7 +175,7 @@ const Setup = () => {
     setFormData(prev => ({
       ...prev,
       [section]: {
-        ...prev[section],
+        ...(prev[section as keyof typeof prev] as any),
         [field]: value
       }
     }));
