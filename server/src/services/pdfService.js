@@ -573,6 +573,9 @@ class PDFService {
     const templatePath = path.join(__dirname, '../templates/receiptTemplate.html');
     let template = await fs.readFile(templatePath, 'utf8');
 
+    // Get logo
+    const logo = this.getDefaultLogo();
+
     // Format date
     const formatDate = (dateString) => {
       if (!dateString) return 'N/A';
@@ -628,6 +631,26 @@ class PDFService {
 
     const totals = receipt.totals || { totalNetValue: 0, totalVatAmount: 0, totalAmount: 0 };
 
+    // Calculate VAT rate from totals
+    let vatRate = '24%'; // Default
+    if (totals.totalNetValue && totals.totalVatAmount) {
+      const rate = (totals.totalVatAmount / totals.totalNetValue) * 100;
+      vatRate = `${Math.round(rate)}%`;
+    }
+
+    // Format event date and time
+    const eventDetails = receipt.eventDetails || {};
+    let eventDateTime = '';
+    if (eventDetails.date) {
+      eventDateTime = formatDate(eventDetails.date);
+      if (eventDetails.time) {
+        eventDateTime += ` at ${eventDetails.time}`;
+        if (eventDetails.endTime) {
+          eventDateTime += ` - ${eventDetails.endTime}`;
+        }
+      }
+    }
+
     // Replace placeholders
     const replacements = {
       '{{language}}': language,
@@ -645,12 +668,20 @@ class PDFService {
       '{{totalNetValue}}': totals.totalNetValue?.toFixed(2) || '0.00',
       '{{totalVatAmount}}': totals.totalVatAmount?.toFixed(2) || '0.00',
       '{{totalAmount}}': totals.totalAmount?.toFixed(2) || '0.00',
+      '{{vatRate}}': vatRate,
       '{{receiptItems}}': receiptItemsHTML,
       '{{aadeQRCode}}': aadeQRCode,
       '{{aadeMark}}': receipt.aadeInfo?.mark || '',
       '{{aadeDisplay}}': receipt.aadeInfo?.mark ? 'flex' : 'none',
       '{{t_vatNumber}}': t.vatNumber || 'VAT',
-      '{{t_taxOffice}}': t.taxOffice || 'Tax Office'
+      '{{t_taxOffice}}': t.taxOffice || 'Tax Office',
+      '{{logo}}': logo || '',
+      '{{logoDisplay}}': logo ? 'block' : 'none',
+      '{{eventName}}': eventDetails.name || '',
+      '{{eventDateTime}}': eventDateTime,
+      '{{eventLocation}}': eventDetails.location || '',
+      '{{eventDisplay}}': eventDetails.name ? 'block' : 'none',
+      '{{eventLocationDisplay}}': eventDetails.location ? 'block' : 'none'
     };
 
     for (const [placeholder, value] of Object.entries(replacements)) {

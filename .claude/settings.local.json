@@ -15,7 +15,10 @@
       "Bash(command:*)",
       "Bash(echo $NVM_DIR)",
       "WebSearch",
-      "WebFetch(domain:docs.invoicemaker.gr)"
+      "WebFetch(domain:docs.invoicemaker.gr)",
+      "Bash(curl:*)",
+      "Bash(lsof:*)",
+      "Bash(kill:*)"
     ],
     "deny": []
   }

@@ -26,7 +26,7 @@ class AADETransformer {
         <city>${this.escapeXML(invoice.issuer.address.city)}</city>
       </address>` : ''}
     </issuer>
-${isRetailReceipt ? this.generateRetailCounterpart(invoice) : this.generateB2BCounterpart(invoice)}
+${isRetailReceipt ? '' : this.generateB2BCounterpart(invoice)}
 
     <invoiceHeader>
       <series>${series}</series>
@@ -44,14 +44,14 @@ ${isRetailReceipt ? this.generateRetailCounterpart(invoice) : this.generateB2BCo
     </paymentMethods>
 
     ${invoice.invoiceDetails.map((line, index) => {
-      // Invoice type 2.1 (services) doesn't allow itemDescr, quantity, measurementUnit
-      const isServiceInvoice = invoice.invoiceType === '2.1';
+      // Invoice type 2.1 (services) and 11.x (retail) don't allow itemDescr, quantity, measurementUnit
+      const skipLineDetails = invoice.invoiceType === '2.1' || isRetailReceipt;
       return `
     <invoiceDetails>
       <lineNumber>${index + 1}</lineNumber>
-      ${!isServiceInvoice && line.description ? `<itemDescr>${this.escapeXML(line.description)}</itemDescr>` : ''}
-      ${!isServiceInvoice ? `<quantity>${line.quantity}</quantity>` : ''}
-      ${!isServiceInvoice ? `<measurementUnit>${this.mapUnit(line.unit)}</measurementUnit>` : ''}
+      ${!skipLineDetails && line.description ? `<itemDescr>${this.escapeXML(line.description)}</itemDescr>` : ''}
+      ${!skipLineDetails ? `<quantity>${line.quantity}</quantity>` : ''}
+      ${!skipLineDetails ? `<measurementUnit>${this.mapUnit(line.unit)}</measurementUnit>` : ''}
       <netValue>${line.netValue.toFixed(2)}</netValue>
       <vatCategory>${line.vatCategory}</vatCategory>
       <vatAmount>${line.vatAmount.toFixed(2)}</vatAmount>${this.generateIncomeClassification(line)}
@@ -110,9 +110,12 @@ ${isRetailReceipt ? this.generateRetailCounterpart(invoice) : this.generateB2BCo
     }
 
     // Minimal counterpart for anonymous retail customer
+    // AADE requires vatNumber, country, and branch elements
     return `
     <counterpart>
+      <vatNumber></vatNumber>
       <country>${country}</country>
+      <branch>0</branch>
     </counterpart>`;
   }
 

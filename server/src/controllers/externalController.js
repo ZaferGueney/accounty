@@ -20,6 +20,9 @@ const createReceipt = async (req, res) => {
       payment,
       eventName,
       eventDate,
+      eventTime,
+      eventEndTime,
+      eventLocation,
       orderId
     } = req.body;
 
@@ -136,8 +139,8 @@ const createReceipt = async (req, res) => {
         vatCategory: item.vatCategory || '1', // 24% default
         vatAmount: vatAmount,
         incomeClassification: [{
-          classificationType: 'E3_561_001', // Revenue from sales
-          categoryId: 'category1_1', // Product sales
+          classificationType: 'E3_561_003', // Revenue from services (for 11.2 Service Receipt)
+          categoryId: 'category1_3', // Services
           amount: netValue
         }]
       };
@@ -180,7 +183,14 @@ const createReceipt = async (req, res) => {
       status: 'paid', // Receipts are already paid
       aadeStatus: 'pending',
       currency: 'EUR',
-      notes: eventName ? `Event: ${eventName}` : ''
+      notes: eventName ? `Event: ${eventName}` : '',
+      eventDetails: {
+        name: eventName || '',
+        date: eventDate ? new Date(eventDate) : null,
+        time: eventTime || '',
+        endTime: eventEndTime || '',
+        location: eventLocation || ''
+      }
     });
 
     // Submit to AADE
@@ -197,7 +207,7 @@ const createReceipt = async (req, res) => {
         console.error('AADE credentials not configured');
       } else {
         // Transform to AADE XML
-        const invoiceXML = aadeTransformer.transformInvoice(receipt);
+        const invoiceXML = aadeTransformer.invoiceToXML(receipt);
 
         // Send to AADE
         aadeResult = await aadeService.sendInvoices(invoiceXML, aadeCredentials);

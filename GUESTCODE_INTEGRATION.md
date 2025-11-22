@@ -10,27 +10,44 @@ When a customer purchases a ticket on GuestCode, you need to create a receipt in
 
 ### 1. Configure Accounty
 
-Add your GuestCode API key to Accounty's `.env` file:
+Add the GuestCode API key to Accounty's `.env` file.
+
+**IMPORTANT:** The format is `GUESTCODE_API_KEY=secretkey:userId` - both parts are required!
 
 ```bash
-# Format: secretkey:userId
-# The userId is your LBNSWRK E.E. account ID in Accounty
-GUESTCODE_API_KEY=your-secure-secret-key:507f1f77bcf86cd799439011
+# Accounty server/.env
+
+# GuestCode API Key - Format: secretkey:userId
+# - secretkey: The key that GuestCode sends in X-API-Key header
+# - userId: Your Accounty MongoDB user ID (find in users collection)
+GUESTCODE_API_KEY=a7f3c9d2e8b1f4a6c3d9e2b5f8a1c4d7:690be3db53cb0144e79179d3
 ```
 
-Generate a secure API key:
+**Generate a secure secret key:**
 ```javascript
 require('crypto').randomBytes(32).toString('hex')
 ```
+
+**Find your userId:** Check the `_id` field in your Accounty user document in MongoDB.
 
 ### 2. Configure GuestCode
 
 Add these to GuestCode's `.env`:
 
 ```bash
-ACCOUNTY_API_URL=https://your-accounty-domain.com/api
-ACCOUNTY_API_KEY=your-secure-secret-key
+# GuestCode server/.env
+
+# Accounty API for AADE receipts
+# Local development:
+ACCOUNTY_API_URL=http://localhost:7842/api
+ACCOUNTY_API_KEY=a7f3c9d2e8b1f4a6c3d9e2b5f8a1c4d7
+
+# Production:
+# ACCOUNTY_API_URL=https://accounty-server.onrender.com/api
+# ACCOUNTY_API_KEY=a7f3c9d2e8b1f4a6c3d9e2b5f8a1c4d7
 ```
+
+**Note:** GuestCode only sends the `secretkey` part (before the colon). Accounty uses the `:userId` part to identify which account to create receipts under.
 
 ## API Endpoints
 
@@ -75,6 +92,9 @@ Content-Type: application/json
   },
   "eventName": "Summer Party 2025",
   "eventDate": "2025-07-15",
+  "eventTime": "23:00",
+  "eventEndTime": "06:00",
+  "eventLocation": "Club XYZ, Athens",
   "orderId": "order_mongodb_id"
 }
 ```
@@ -181,6 +201,19 @@ Downloads the complete receipt PDF that can be attached to the ticket email.
 - `6` = POS
 - `7` = IRIS
 
+### Event
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| eventName | No | Name of the event (appears on receipt) |
+| eventDate | No | Event date (ISO format: "2025-07-15") |
+| eventTime | No | Event start time (e.g., "23:00") |
+| eventEndTime | No | Event end time (e.g., "06:00") |
+| eventLocation | No | Venue name and address |
+| orderId | No | Your order ID for reference |
+
+These fields will be displayed on the receipt PDF to provide full event context for the customer.
+
 ## Email Options
 
 You have two options for including the receipt in the ticket email:
@@ -255,6 +288,9 @@ const createReceipt = async (order, event) => {
       },
       eventName: event.title,
       eventDate: event.startDate,
+      eventTime: event.startTime,
+      eventEndTime: event.endTime,
+      eventLocation: event.location,
       orderId: order._id.toString()
     };
 

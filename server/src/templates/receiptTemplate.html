@@ -236,6 +236,9 @@
   <div class="container">
     <!-- Header -->
     <div class="header">
+      <div style="margin-bottom: 10px; display: {{logoDisplay}};">
+        <img src="{{logo}}" alt="Logo" style="max-height: 60px; max-width: 200px;">
+      </div>
       <div class="company-name">{{issuer.name}}</div>
       <div class="company-details">
         {{t_vatNumber}}: {{issuer.afm}} | {{t_taxOffice}}: {{issuer.doy}}<br>
@@ -266,6 +269,14 @@
       <div class="customer-email">{{customer.email}}</div>
     </div>
 
+    <!-- Event Details -->
+    <div class="customer-section" style="display: {{eventDisplay}};">
+      <div class="customer-title">Event Details</div>
+      <div class="customer-name">{{eventName}}</div>
+      <div class="customer-email">{{eventDateTime}}</div>
+      <div class="customer-email" style="display: {{eventLocationDisplay}};">📍 {{eventLocation}}</div>
+    </div>
+
     <!-- Items -->
     <table class="items-table">
       <thead>
@@ -289,7 +300,7 @@
           <span>€{{totalNetValue}}</span>
         </div>
         <div class="total-line">
-          <span>VAT</span>
+          <span>VAT ({{vatRate}})</span>
           <span>€{{totalVatAmount}}</span>
         </div>
         <div class="total-line grand-total">

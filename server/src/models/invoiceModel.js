@@ -458,6 +458,15 @@ const invoiceSchema = new mongoose.Schema({
     default: 'standard'
   },
 
+  // Event Details (for receipts from ticket sales)
+  eventDetails: {
+    name: { type: String },
+    date: { type: Date },
+    time: { type: String },
+    endTime: { type: String },
+    location: { type: String }
+  },
+
   // Related Documents
   relatedInvoices: [{
     type: mongoose.Schema.Types.ObjectId,
