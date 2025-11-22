@@ -429,7 +429,7 @@ const Setup = () => {
               <select
                 value={formData.tax.doy?.code || ''}
                 onChange={(e) => {
-                  const selectedOffice = taxOffices.find(office => office.code === e.target.value);
+                  const selectedOffice = taxOffices.find((office: any) => office.code === e.target.value);
                   if (selectedOffice) {
                     handleNestedInputChange('tax', 'doy', 'code', selectedOffice.code);
                     handleNestedInputChange('tax', 'doy', 'name', selectedOffice.name);
@@ -438,7 +438,7 @@ const Setup = () => {
                 className="w-full px-4 py-3 bg-gray-50/80 dark:bg-slate-700/80 border border-gray-300/50 dark:border-slate-600/50 rounded-xl text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50 transition-all"
               >
                 <option value="">Select tax office</option>
-                {taxOffices.map(office => (
+                {taxOffices.map((office: any) => (
                   <option key={office.code} value={office.code}>
                     {office.name} - {office.city}
                   </option>
