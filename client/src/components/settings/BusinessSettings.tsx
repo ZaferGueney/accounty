@@ -2,15 +2,22 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'next-i18next';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import {
-  fetchSettings,
-  updateSection,
-  fetchTaxOffices,
-  validateAFM,
+  fetchSettings as _fetchSettings,
+  updateSection as _updateSection,
+  fetchTaxOffices as _fetchTaxOffices,
+  validateAFM as _validateAFM,
   selectSettings,
   selectTaxOffices,
   selectSettingsSaving,
   selectAFMValidation
 } from '@/store/slices/settingsSlice';
+
+// Cast thunks to any to avoid TypeScript errors with JS slice
+const fetchSettings = _fetchSettings as any;
+const updateSection = _updateSection as any;
+const fetchTaxOffices = _fetchTaxOffices as any;
+const validateAFM = _validateAFM as any;
+
 import KADSelector from '@/components/KADSelector';
 
 const BusinessSettings = () => {
