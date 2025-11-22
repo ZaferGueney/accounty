@@ -718,7 +718,9 @@ class PDFService {
       '{{eventDateTime}}': eventDateTime,
       '{{eventLocation}}': eventDetails.location || '',
       '{{eventDisplay}}': eventDetails.name ? 'block' : 'none',
-      '{{eventLocationDisplay}}': eventDetails.location ? 'block' : 'none'
+      '{{eventLocationDisplay}}': eventDetails.location ? 'block' : 'none',
+      '{{brandLogo}}': eventDetails.brandLogo || '',
+      '{{brandLogoDisplay}}': eventDetails.brandLogo ? 'block' : 'none'
     };
 
     for (const [placeholder, value] of Object.entries(replacements)) {

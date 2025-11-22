@@ -464,7 +464,8 @@ const invoiceSchema = new mongoose.Schema({
     date: { type: Date },
     time: { type: String },
     endTime: { type: String },
-    location: { type: String }
+    location: { type: String },
+    brandLogo: { type: String }
   },
 
   // Related Documents
@@ -568,7 +569,7 @@ invoiceSchema.statics.generateInvoiceNumber = async function(userId, series = 'A
   const lastInvoice = await this.findOne({
     userId,
     series,
-    invoiceNumber: new RegExp(`^${series}\\d{4}$`) // Match series + exactly 4 digits (A0001, A0002, etc.)
+    invoiceNumber: new RegExp(`^${series}\\d+$`) // Match series + any digits (A0001, A000001, etc.)
   }).sort({ invoiceNumber: -1 });
 
   let nextNumber = 1;
@@ -578,8 +579,8 @@ invoiceSchema.statics.generateInvoiceNumber = async function(userId, series = 'A
     nextNumber = lastNumber + 1;
   }
 
-  // Return format: A0001, A0002, etc. (no year)
-  return `${series}${nextNumber.toString().padStart(4, '0')}`;
+  // Return format: A000001, A000002, etc. (6 digits for receipts)
+  return `${series}${nextNumber.toString().padStart(6, '0')}`;
 };
 
 // Static method to find invoices by user

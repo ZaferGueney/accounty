@@ -30,24 +30,37 @@
       padding: 0;
     }
 
-    .header {
+    .brand-logo-section {
       text-align: center;
       padding-bottom: 20px;
-      border-bottom: 2px solid #3b82f6;
+      margin-bottom: 15px;
+    }
+
+    .brand-logo {
+      max-height: 80px;
+      max-width: 200px;
+      margin-bottom: 10px;
+    }
+
+    .header {
+      text-align: center;
+      padding: 15px;
+      background: #f9fafb;
+      border-radius: 8px;
       margin-bottom: 20px;
     }
 
     .company-name {
-      font-size: 20px;
-      font-weight: 700;
-      color: #111827;
-      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #6b7280;
+      margin-bottom: 6px;
     }
 
     .company-details {
-      font-size: 10px;
-      color: #6b7280;
-      line-height: 1.6;
+      font-size: 9px;
+      color: #9ca3af;
+      line-height: 1.5;
     }
 
     .receipt-title {
@@ -234,11 +247,13 @@
 </head>
 <body>
   <div class="container">
-    <!-- Header -->
+    <!-- Brand Logo (Event Host) -->
+    <div class="brand-logo-section" style="display: {{brandLogoDisplay}};">
+      <img src="{{brandLogo}}" alt="Brand Logo" class="brand-logo">
+    </div>
+
+    <!-- Issuer Details (Small/Secondary) -->
     <div class="header">
-      <div style="margin-bottom: 10px; display: {{logoDisplay}};">
-        <img src="{{logo}}" alt="Logo" style="max-height: 60px; max-width: 200px;">
-      </div>
       <div class="company-name">{{issuer.name}}</div>
       <div class="company-details">
         {{t_vatNumber}}: {{issuer.afm}} | {{t_taxOffice}}: {{issuer.doy}}<br>

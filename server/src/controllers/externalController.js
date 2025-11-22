@@ -23,7 +23,8 @@ const createReceipt = async (req, res) => {
       eventTime,
       eventEndTime,
       eventLocation,
-      orderId
+      orderId,
+      brandLogo
     } = req.body;
 
     // Validate required fields
@@ -189,7 +190,8 @@ const createReceipt = async (req, res) => {
         date: eventDate ? new Date(eventDate) : null,
         time: eventTime || '',
         endTime: eventEndTime || '',
-        location: eventLocation || ''
+        location: eventLocation || '',
+        brandLogo: brandLogo || ''
       }
     });
 
