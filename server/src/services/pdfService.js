@@ -1,4 +1,5 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -147,10 +148,46 @@ class PDFService {
 
   async initialize() {
     if (!this.browser) {
-      this.browser = await puppeteer.launch({
-        headless: 'new',
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-      });
+      const isProduction = process.env.NODE_ENV === 'production';
+
+      let launchOptions;
+
+      if (isProduction) {
+        // Use @sparticuz/chromium for cloud deployment
+        launchOptions = {
+          args: chromium.args,
+          defaultViewport: chromium.defaultViewport,
+          executablePath: await chromium.executablePath(),
+          headless: chromium.headless,
+        };
+        console.log('🚀 Launching Puppeteer with @sparticuz/chromium');
+      } else {
+        // Local development - use system Chrome
+        const possiblePaths = [
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+          '/Applications/Chromium.app/Contents/MacOS/Chromium',
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          '/usr/bin/google-chrome',
+          '/usr/bin/chromium-browser'
+        ];
+
+        let executablePath = null;
+        for (const chromePath of possiblePaths) {
+          if (fsSync.existsSync(chromePath)) {
+            executablePath = chromePath;
+            break;
+          }
+        }
+
+        launchOptions = {
+          headless: 'new',
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+          executablePath
+        };
+        console.log('🚀 Launching Puppeteer with local Chrome at:', executablePath);
+      }
+
+      this.browser = await puppeteer.launch(launchOptions);
     }
   }
 
