@@ -5,11 +5,15 @@ import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
 import { useTranslation } from 'next-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { 
-  fetchSettings, 
-  selectSettings, 
-  selectSettingsLoading 
+import {
+  fetchSettings as _fetchSettings,
+  selectSettings,
+  selectSettingsLoading
 } from '@/store/slices/settingsSlice';
+
+// Cast thunks to any to avoid TypeScript errors with JS slice
+const fetchSettings = _fetchSettings as any;
+
 import DashboardNavigation from '@/components/DashboardNavigation';
 import SettingsNav from '@/components/SettingsNav';
 import AccountSettings from '@/components/settings/AccountSettings';

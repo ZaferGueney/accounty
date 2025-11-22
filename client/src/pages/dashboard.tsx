@@ -5,12 +5,17 @@ import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
 import { useTranslation } from 'next-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { 
-  fetchCompletionStatus, 
-  fetchSettings,
-  selectCompletionStatus, 
-  selectSettingsLoading 
+import {
+  fetchCompletionStatus as _fetchCompletionStatus,
+  fetchSettings as _fetchSettings,
+  selectCompletionStatus,
+  selectSettingsLoading
 } from '@/store/slices/settingsSlice';
+
+// Cast thunks to any to avoid TypeScript errors with JS slice
+const fetchCompletionStatus = _fetchCompletionStatus as any;
+const fetchSettings = _fetchSettings as any;
+
 import DashboardNavigation from '@/components/DashboardNavigation';
 import Setup from '@/components/Setup';
 import Invoice from '@/components/Invoice';
