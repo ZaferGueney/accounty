@@ -280,7 +280,7 @@ const Setup = () => {
         console.log('Setup completed successfully, redirecting...');
         router.push('/dashboard');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving section:', error);
       console.error('Error details:', error.response?.data || error.message);
       setIsNavigating(false);
