@@ -579,8 +579,9 @@ invoiceSchema.statics.generateInvoiceNumber = async function(userId, series = 'A
     nextNumber = lastNumber + 1;
   }
 
-  // Return format: A000001, A000002, etc. (6 digits for receipts)
-  return `${series}${nextNumber.toString().padStart(6, '0')}`;
+  // Conditional padding: Receipts (R) use 6 digits, Invoices (A, etc.) use 4 digits
+  const padLength = series === 'R' ? 6 : 4;
+  return `${series}${nextNumber.toString().padStart(padLength, '0')}`;
 };
 
 // Static method to find invoices by user
