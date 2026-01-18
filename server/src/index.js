@@ -15,6 +15,7 @@ const clientRoutes = require('./routes/clientRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
 const bankingRoutes = require('./routes/bankingRoutes');
 const externalRoutes = require('./routes/externalRoutes');
+const serviceRoutes = require('./routes/serviceRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 7842;
@@ -79,6 +80,7 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/banking', bankingRoutes);
 app.use('/api/external', externalRoutes);
+app.use('/api/services', serviceRoutes);
 
 // Basic health check route
 app.get('/api/health', (req, res) => {

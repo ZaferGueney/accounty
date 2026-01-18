@@ -3,6 +3,7 @@ const Customer = require('../models/customerModel');
 const Client = require('../models/clientModel');
 const Settings = require('../models/settingsModel');
 const Banking = require('../models/bankingModel');
+const Service = require('../models/serviceModel');
 const pdfService = require('../services/pdfService');
 const aadeService = require('../services/aadeService');
 const aadeTransformer = require('../services/aadeTransformer');
@@ -23,6 +24,40 @@ const decryptKey = (encryptedText) => {
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
   return decrypted;
+};
+
+// Helper: Auto-create services from invoice line items
+const autoCreateServicesFromInvoice = async (userId, invoiceDetails) => {
+  for (const line of invoiceDetails) {
+    if (line.description && line.description.trim()) {
+      const name = line.description.trim();
+
+      // Check if service with this exact name exists
+      const existingService = await Service.findOne({
+        userId,
+        name,
+        isActive: true
+      });
+
+      if (!existingService) {
+        // Auto-create new service
+        await Service.create({
+          userId,
+          name,
+          description: line.itemDescription || '',
+          basePrice: line.unitPrice || 0,
+          unit: line.unit || 'pcs',
+          vatCategory: line.vatCategory || '1',
+          stats: { timesUsed: 1, lastUsed: new Date() }
+        });
+      } else {
+        // Update usage stats
+        existingService.stats.timesUsed += 1;
+        existingService.stats.lastUsed = new Date();
+        await existingService.save();
+      }
+    }
+  }
 };
 
 // @desc    Get all invoices for a user
@@ -364,6 +399,11 @@ const createInvoice = async (req, res) => {
       }
     }
 
+    // Auto-create services from invoice line items (fire and forget)
+    autoCreateServicesFromInvoice(userId, invoice.invoiceDetails).catch(err => {
+      console.warn('Auto-create services warning:', err.message);
+    });
+
     // Populate references
     await invoice.populate(['customerId', 'clientId']);
 
@@ -603,6 +643,11 @@ const updateInvoice = async (req, res) => {
         });
       }
     }
+
+    // Auto-create services from invoice line items (fire and forget)
+    autoCreateServicesFromInvoice(req.user.userId, invoice.invoiceDetails).catch(err => {
+      console.warn('Auto-create services warning:', err.message);
+    });
 
     await invoice.populate(['customerId', 'clientId']);
 

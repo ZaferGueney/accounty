@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
-import { invoiceAPI, customerAPI } from '@/utils/api';
+import { invoiceAPI, customerAPI, serviceAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchSettings, selectSettings, selectSettingsLoading } from '@/store/slices/settingsSlice';
 
-const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
+const InvoiceEdit = ({ invoiceId, initialData, onClose, onSave }) => {
   const router = useRouter();
   const { t } = useTranslation('common');
   const { user } = useAuth();
@@ -50,6 +50,18 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
     paidDate: new Date().toISOString().split('T')[0],
     method: '3',
     info: ''
+  });
+
+  // Service search state
+  const [services, setServices] = useState([]);
+  const [showServiceSearch, setShowServiceSearch] = useState({ index: null, show: false });
+  const [showCreateService, setShowCreateService] = useState(false);
+  const [newService, setNewService] = useState({
+    name: '',
+    description: '',
+    basePrice: 0,
+    unit: 'hrs',
+    vatCategory: '1'
   });
 
   const [invoice, setInvoice] = useState({
@@ -180,6 +192,19 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
     dispatch(fetchSettings());
   }, [invoiceId, dispatch]);
 
+  // Handle initialData (duplicate mode)
+  useEffect(() => {
+    if (initialData && !invoiceId) {
+      setInvoice(prev => ({
+        ...prev,
+        ...initialData,
+        // Ensure new dates for duplicate
+        issueDate: new Date().toISOString().split('T')[0],
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      }));
+    }
+  }, [initialData, invoiceId]);
+
   const fetchInvoice = async () => {
     try {
       setLoading(true);
@@ -215,6 +240,80 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
       }
     } catch (error) {
       console.error('Failed to fetch customers:', error);
+    }
+  };
+
+  // Service search functions
+  const fetchRecentServices = async () => {
+    try {
+      const response = await serviceAPI.getRecentServices();
+      if (response.data.success) {
+        setServices(response.data.services);
+      }
+    } catch (error) {
+      console.error('Fetch recent services error:', error);
+    }
+  };
+
+  const searchServices = async (query) => {
+    if (!query || query.length < 2) {
+      fetchRecentServices();
+      return;
+    }
+    try {
+      const response = await serviceAPI.searchServices({ q: query });
+      if (response.data.success) {
+        setServices(response.data.services);
+      }
+    } catch (error) {
+      console.error('Service search error:', error);
+    }
+  };
+
+  const selectService = (service, lineIndex) => {
+    const newDetails = [...invoice.invoiceDetails];
+    const quantity = newDetails[lineIndex].quantity || 1;
+    const netValue = quantity * service.basePrice;
+    const vatRate = vatRates[service.vatCategory] || 0;
+    const vatAmount = netValue * vatRate;
+
+    newDetails[lineIndex] = {
+      ...newDetails[lineIndex],
+      description: service.name,
+      itemDescription: service.description || '',
+      unitPrice: service.basePrice,
+      unit: service.unit,
+      vatCategory: service.vatCategory,
+      netValue,
+      vatAmount,
+      incomeClassification: [{
+        classificationType: service.incomeClassification?.classificationType || 'E3_561_001',
+        categoryId: service.incomeClassification?.categoryId || 'category1_3',
+        amount: netValue
+      }]
+    };
+
+    setInvoice(prev => ({ ...prev, invoiceDetails: newDetails }));
+    setShowServiceSearch({ index: null, show: false });
+
+    // Track usage (fire and forget)
+    serviceAPI.trackUsage(service._id).catch(() => {});
+  };
+
+  const handleCreateService = async () => {
+    try {
+      setError('');
+      const response = await serviceAPI.createService(newService);
+      if (response.data.success) {
+        // If a line was active, apply the new service
+        if (showServiceSearch.index !== null) {
+          selectService(response.data.service, showServiceSearch.index);
+        }
+        setShowCreateService(false);
+        setNewService({ name: '', description: '', basePrice: 0, unit: 'hrs', vatCategory: '1' });
+      }
+    } catch (error) {
+      setError(error.response?.data?.message || 'Failed to create service');
     }
   };
 
@@ -868,8 +967,8 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                 {/* Main Row - Better mobile spacing */}
                 <div className="grid grid-cols-12 gap-2 md:gap-4 p-3 md:p-4 items-center">
                   
-                  {/* Description */}
-                  <div className="col-span-3 md:col-span-3">
+                  {/* Description with Service Search */}
+                  <div className="col-span-3 md:col-span-3 relative">
                     <input
                       type="text"
                       value={line.description}
@@ -877,10 +976,61 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                         const newDetails = [...invoice.invoiceDetails];
                         newDetails[index].description = e.target.value;
                         setInvoice(prev => ({ ...prev, invoiceDetails: newDetails }));
+                        searchServices(e.target.value);
+                        setShowServiceSearch({ index, show: true });
+                      }}
+                      onFocus={() => {
+                        fetchRecentServices();
+                        setShowServiceSearch({ index, show: true });
+                      }}
+                      onBlur={() => {
+                        setTimeout(() => setShowServiceSearch({ index: null, show: false }), 200);
                       }}
                       placeholder="Service/Product name"
                       className="w-full px-2 md:px-3 py-2 text-sm border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     />
+
+                    {/* Service Search Dropdown */}
+                    {showServiceSearch.show && showServiceSearch.index === index && (
+                      <div className="absolute z-20 w-72 mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+                        {services.length > 0 ? (
+                          services.map(service => (
+                            <div
+                              key={service._id}
+                              onMouseDown={() => selectService(service, index)}
+                              className="p-3 hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer border-b border-gray-100 dark:border-slate-600 last:border-b-0 transition-colors"
+                            >
+                              <div className="flex justify-between items-start">
+                                <span className="font-medium text-sm text-gray-900 dark:text-white">{service.name}</span>
+                                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
+                                  €{service.basePrice?.toFixed(2)}/{service.unit}
+                                </span>
+                              </div>
+                              {service.description && (
+                                <div className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{service.description}</div>
+                              )}
+                            </div>
+                          ))
+                        ) : line.description?.length >= 2 ? (
+                          <div className="p-3 text-center">
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">No services found</p>
+                            <button
+                              onMouseDown={() => {
+                                setNewService(prev => ({ ...prev, name: line.description }));
+                                setShowCreateService(true);
+                              }}
+                              className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                            >
+                              + Create "{line.description}"
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="p-3 text-center text-sm text-gray-400 dark:text-gray-500">
+                            Type to search services...
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Quantity */}
@@ -1633,6 +1783,128 @@ const InvoiceEdit = ({ invoiceId, onClose, onSave }) => {
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Update Customer
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Service Modal */}
+      {showCreateService && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowCreateService(false)}></div>
+
+            <div className="relative inline-block align-bottom bg-white dark:bg-slate-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full">
+              <div className="bg-white dark:bg-slate-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                    Create New Service
+                  </h3>
+                  <button
+                    onClick={() => setShowCreateService(false)}
+                    className="bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg p-2 transition-colors"
+                  >
+                    <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Service Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={newService.name}
+                      onChange={(e) => setNewService(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g., DJ Service, Photography"
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Description
+                    </label>
+                    <textarea
+                      value={newService.description}
+                      onChange={(e) => setNewService(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="Optional details about this service"
+                      rows={2}
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Base Price *
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={newService.basePrice}
+                        onChange={(e) => setNewService(prev => ({ ...prev, basePrice: parseFloat(e.target.value) || 0 }))}
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Unit
+                      </label>
+                      <select
+                        value={newService.unit}
+                        onChange={(e) => setNewService(prev => ({ ...prev, unit: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      >
+                        <option value="pcs">pcs</option>
+                        <option value="hrs">hrs</option>
+                        <option value="days">days</option>
+                        <option value="months">months</option>
+                        <option value="kg">kg</option>
+                        <option value="m">m</option>
+                        <option value="m2">m²</option>
+                        <option value="liters">liters</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      VAT Rate
+                    </label>
+                    <select
+                      value={newService.vatCategory}
+                      onChange={(e) => setNewService(prev => ({ ...prev, vatCategory: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    >
+                      <option value="1">24% (Standard)</option>
+                      <option value="2">13% (Reduced)</option>
+                      <option value="3">6% (Super-reduced)</option>
+                      <option value="7">0% (Zero rate)</option>
+                      <option value="8">Exempt</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowCreateService(false)}
+                    className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateService}
+                    disabled={!newService.name.trim()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Create Service
                   </button>
                 </div>
               </div>

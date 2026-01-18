@@ -249,6 +249,18 @@ export const bankingAPI = {
   setDefaultBank: (id) => api.put(`/api/banking/${id}/set-default`)
 };
 
+// Service API (reusable positions/products)
+export const serviceAPI = {
+  getServices: (params = {}) => api.get('/api/services', { params }),
+  getService: (id) => api.get(`/api/services/${id}`),
+  createService: (data) => api.post('/api/services', data),
+  updateService: (id, data) => api.put(`/api/services/${id}`, data),
+  deleteService: (id) => api.delete(`/api/services/${id}`),
+  searchServices: (params = {}) => api.get('/api/services/search', { params }),
+  getRecentServices: () => api.get('/api/services/recent'),
+  trackUsage: (id) => api.post(`/api/services/${id}/track`)
+};
+
 // Settings API
 export const settingsAPI = {
   getSettings: () => api.get('/api/settings'),

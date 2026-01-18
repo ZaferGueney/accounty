@@ -27,6 +27,7 @@ const Invoice = () => {
   const [stats, setStats] = useState(null);
   const [showInvoiceEdit, setShowInvoiceEdit] = useState(false);
   const [editingInvoiceId, setEditingInvoiceId] = useState(null);
+  const [duplicatingInvoice, setDuplicatingInvoice] = useState(null);
   const [activeTab, setActiveTab] = useState('invoices'); // 'invoices' or 'receipts'
 
   // Fetch invoices
@@ -81,6 +82,7 @@ const Invoice = () => {
 
   const handleCreateInvoice = () => {
     setEditingInvoiceId(null);
+    setDuplicatingInvoice(null);
     setShowInvoiceEdit(true);
   };
 
@@ -92,6 +94,7 @@ const Invoice = () => {
   const handleCloseInvoiceEdit = () => {
     setShowInvoiceEdit(false);
     setEditingInvoiceId(null);
+    setDuplicatingInvoice(null);
     // Refresh invoices list
     fetchInvoices();
     fetchStats();
@@ -100,6 +103,50 @@ const Invoice = () => {
   const handleViewInvoice = (id) => {
     // For now, open in edit mode - later we can add a view-only mode
     handleEditInvoice(id);
+  };
+
+  const handleDuplicateInvoice = async (id) => {
+    try {
+      // Fetch the invoice data
+      const response = await invoiceAPI.getInvoice(id);
+      if (response.data.success) {
+        const invoice = response.data.invoice;
+
+        // Prepare duplicate data - keep customer, services, descriptions but reset dates and numbers
+        const duplicateData = {
+          customerId: invoice.customerId,
+          series: invoice.series,
+          invoiceType: invoice.invoiceType,
+          currency: invoice.currency,
+          exchangeRate: invoice.exchangeRate,
+          vatRegulation: invoice.vatRegulation,
+          counterpart: invoice.counterpart,
+          invoiceDetails: invoice.invoiceDetails.map((detail, idx) => ({
+            lineNumber: idx + 1,
+            description: detail.description,
+            itemDescription: detail.itemDescription,
+            quantity: detail.quantity,
+            unit: detail.unit,
+            unitPrice: detail.unitPrice,
+            netValue: detail.netValue,
+            vatCategory: detail.vatCategory,
+            vatAmount: detail.vatAmount,
+            incomeClassification: detail.incomeClassification
+          })),
+          notes: invoice.notes,
+          footerText: invoice.footerText,
+          payment: invoice.payment,
+          hideBankDetails: invoice.hideBankDetails
+        };
+
+        setDuplicatingInvoice(duplicateData);
+        setEditingInvoiceId(null);
+        setShowInvoiceEdit(true);
+      }
+    } catch (err) {
+      console.error('Duplicate invoice error:', err);
+      setError('Failed to duplicate invoice');
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -372,6 +419,15 @@ const Invoice = () => {
                             </svg>
                           </button>
                         )}
+                        <button
+                          onClick={() => handleDuplicateInvoice(invoice._id)}
+                          className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
+                          title="Duplicate"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -458,7 +514,11 @@ const Invoice = () => {
               <div className="bg-white dark:bg-slate-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                    {editingInvoiceId ? t('invoice.editInvoice') : t('invoice.createNewInvoice')}
+                    {editingInvoiceId
+                      ? t('invoice.editInvoice')
+                      : duplicatingInvoice
+                        ? t('invoice.duplicateInvoice') || 'Duplicate Invoice'
+                        : t('invoice.createNewInvoice')}
                   </h3>
                   <button
                     onClick={handleCloseInvoiceEdit}
@@ -469,9 +529,10 @@ const Invoice = () => {
                     </svg>
                   </button>
                 </div>
-                
-                <InvoiceEdit 
-                  invoiceId={editingInvoiceId} 
+
+                <InvoiceEdit
+                  invoiceId={editingInvoiceId}
+                  initialData={duplicatingInvoice}
                   onClose={handleCloseInvoiceEdit}
                   onSave={handleCloseInvoiceEdit}
                 />
