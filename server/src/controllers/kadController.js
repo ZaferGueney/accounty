@@ -28,7 +28,7 @@ const getKADs = async (req, res) => {
         const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const escapedCleanSearch = cleanSearch.replace(
           /[.*+?^${}()|[\]\\]/g,
-          "\\$&"
+          "\\$&",
         );
 
         query.$or = [
@@ -201,7 +201,7 @@ const updateKAD = async (req, res) => {
     const kad = await KAD.findOneAndUpdate(
       { code },
       { ...updateData, updatedAt: new Date() },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     );
 
     if (!kad) {
@@ -245,7 +245,7 @@ const deleteKAD = async (req, res) => {
     const kad = await KAD.findOneAndUpdate(
       { code },
       { isActive: false, updatedAt: new Date() },
-      { new: true }
+      { new: true },
     );
 
     if (!kad) {
@@ -295,7 +295,7 @@ const bulkUploadKADs = async (req, res) => {
             await KAD.findOneAndUpdate(
               { code: kadData.code },
               { ...kadData, updatedAt: new Date() },
-              { runValidators: true }
+              { runValidators: true },
             );
             updated++;
           } else {

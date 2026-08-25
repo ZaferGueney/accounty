@@ -582,12 +582,14 @@ const refreshToken = async (req, res) => {
     // Generate new access token
     const newAccessToken = generateAccessToken(decoded.userId);
     
-    // Set new access token cookie
+    // Set new access token cookie - must match the options used at login,
+    // otherwise the browser drops the refreshed cookie (cross-domain needs
+    // sameSite 'none') and the user is bounced back to the login screen.
     res.cookie('accounty_access_token', newAccessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000 // 15 minutes
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days to match JWT expiration
     });
 
     res.json({
