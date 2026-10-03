@@ -559,10 +559,13 @@ const InvoiceEdit = ({ invoiceId, initialData, onClose, onSave }) => {
 
         setError(`AADE Validation Errors:\n\n${aadeErrors}\n\nInvoice saved as pending. Fix the errors and click "Save & Send" to retry.`);
       } else {
-        setError(errorData?.message || err.message || 'Failed to save invoice');
+        const detail = errorData?.error ? `: ${errorData.error}` : '';
+        setError(errorData?.message ? `${errorData.message}${detail}` : (err.message || 'Failed to save invoice'));
       }
 
-      console.error('Save invoice error:', err);
+      // warn, not error: the failure is already shown in the form, and console.error
+      // makes the Next.js dev overlay pop up for an error we've handled
+      console.warn('Save invoice error:', err.response?.status, errorData || err.message);
     } finally {
       setSaving(false);
     }

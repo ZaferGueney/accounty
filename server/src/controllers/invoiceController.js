@@ -234,7 +234,7 @@ const createInvoice = async (req, res) => {
       country: 'GR',
       branch: 0,
       name: settings.business?.legalName || settings.business?.tradingName || `${req.user.firstName} ${req.user.lastName}`,
-      legalForm: settings.business?.legalForm || '',
+      legalForm: settings.business?.legalForm || undefined,
       address: {
         street: settings.address?.street,
         number: settings.address?.number,
@@ -413,7 +413,9 @@ const createInvoice = async (req, res) => {
     });
   } catch (error) {
     console.error('Create invoice error:', error);
-    res.status(400).json({
+    // Only invalid input is the client's fault; anything else is a server-side failure
+    const isBadInput = error.name === 'ValidationError' || error.name === 'CastError';
+    res.status(isBadInput ? 400 : 500).json({
       success: false,
       message: 'Failed to create invoice',
       error: error.message
@@ -478,7 +480,7 @@ const updateInvoice = async (req, res) => {
         country: 'GR',
         branch: 0,
         name: settings.business?.legalName || settings.business?.tradingName || invoice.issuer?.name,
-        legalForm: settings.business?.legalForm || '',
+        legalForm: settings.business?.legalForm || undefined,
         address: {
           street: settings.address?.street || invoice.issuer?.address?.street,
           number: settings.address?.number || invoice.issuer?.address?.number,
@@ -657,7 +659,9 @@ const updateInvoice = async (req, res) => {
     });
   } catch (error) {
     console.error('Update invoice error:', error);
-    res.status(400).json({
+    // Only invalid input is the client's fault; anything else is a server-side failure
+    const isBadInput = error.name === 'ValidationError' || error.name === 'CastError';
+    res.status(isBadInput ? 400 : 500).json({
       success: false,
       message: 'Failed to update invoice',
       error: error.message
@@ -856,7 +860,7 @@ const previewInvoice = async (req, res) => {
         country: 'GR',
         branch: 0,
         name: settings.business?.legalName || settings.business?.tradingName || `${req.user.firstName} ${req.user.lastName}`,
-        legalForm: settings.business?.legalForm || '',
+        legalForm: settings.business?.legalForm || undefined,
         address: {
           street: settings.address?.street,
           number: settings.address?.number,

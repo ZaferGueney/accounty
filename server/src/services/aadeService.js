@@ -300,12 +300,23 @@ class AADEService {
         console.error('📄 Response data:', typeof error.response.data === 'string' ? error.response.data.substring(0, 500) : JSON.stringify(error.response.data));
 
         // AADE returned error response - try to parse it
+        let errorResult;
         try {
-          const errorResult = await this.parseResponseXML(error.response.data);
-          return errorResult;
+          errorResult = await this.parseResponseXML(error.response.data);
         } catch (parseError) {
           throw new Error(`AADE error (${error.response.status}): ${error.response.data}`);
         }
+
+        // Only a response carrying validation errors is a real rejection of the invoice.
+        // Anything else (gateway 401/429/5xx, outages) is an upstream failure, not a bad request.
+        if (!errorResult.errors || errorResult.errors.length === 0) {
+          const body = typeof error.response.data === 'string'
+            ? error.response.data.substring(0, 300)
+            : JSON.stringify(error.response.data);
+          throw new Error(`AADE service error (${error.response.status}): ${body}`);
+        }
+
+        return errorResult;
       }
 
       // Network or other error
