@@ -245,6 +245,7 @@ class PDFService {
   }
 
   async generateInvoiceHTML(invoice, theme = 'light', isPreview = false, language = 'en') {
+    if (invoice.documentBrand === 'sitemou') return require('./sitemouDocument').html(invoice,language,isPreview);
     console.log('📄 PDFService: Starting HTML generation...');
     console.log('📋 PDFService: Invoice details:', {
       invoiceNumber: invoice.invoiceNumber,
@@ -603,6 +604,7 @@ class PDFService {
   }
 
   async generateReceiptHTML(receipt, language = 'en') {
+    if (receipt.documentBrand === 'sitemou') return require('./sitemouDocument').html(receipt,language);
     const translations = this.getTranslations(language);
     const t = translations.pdf || {};
 

@@ -1,3 +1,4 @@
+const sitemouDocument = require('../services/sitemouDocument');
 const Invoice = require('../models/invoiceModel');
 const Settings = require('../models/settingsModel');
 const Banking = require('../models/bankingModel');
@@ -12,7 +13,9 @@ const pdfService = require('../services/pdfService');
 const createReceipt = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const source = req.apiSource || 'api';
+    const source = req.body.documentBrand === 'sitemou' ? 'api' : (req.apiSource || 'api');
+    const isSiteMou = req.body.documentBrand === 'sitemou';
+    try { sitemouDocument.validate(req.body, !!req.body.counterpart); } catch(e) { return res.status(400).json({success:false,message:e.message}); }
 
     const {
       customer,
@@ -76,7 +79,7 @@ const createReceipt = async (req, res) => {
     }));
 
     // Generate receipt number (R series for receipts from external sources)
-    const receiptNumber = await Invoice.generateInvoiceNumber(userId, 'R');
+    const receiptNumber = (isSiteMou ? await sitemouDocument.number(userId,'receipt') : await Invoice.generateInvoiceNumber(userId, 'R'));
 
     // Build issuer from settings
     const issuer = {
@@ -125,9 +128,9 @@ const createReceipt = async (req, res) => {
 
     // Build invoice details from items
     const invoiceDetails = items.map((item, index) => {
-      const netValue = item.quantity * item.unitPrice;
+      const netValue = isSiteMou ? sitemouDocument.money(item).netValue : item.quantity * item.unitPrice;
       const vatRate = getVatRate(item.vatCategory || '1');
-      const vatAmount = netValue * vatRate;
+      const vatAmount = isSiteMou ? sitemouDocument.money(item).vatAmount : netValue * vatRate;
 
       return {
         lineNumber: index + 1,
@@ -135,7 +138,7 @@ const createReceipt = async (req, res) => {
         itemDescription: item.itemDescription || (eventDate ? `Event Date: ${eventDate}` : ''),
         quantity: item.quantity || 1,
         unit: item.unit || 'pcs',
-        unitPrice: item.unitPrice || 0,
+        unitPrice: isSiteMou ? sitemouDocument.money(item).unitPrice : item.unitPrice || 0,
         netValue: netValue,
         vatCategory: item.vatCategory || '1', // 24% default
         vatAmount: vatAmount,
@@ -156,7 +159,8 @@ const createReceipt = async (req, res) => {
     const receipt = await Invoice.create({
       userId,
       invoiceNumber: receiptNumber,
-      series: 'R',
+      series: isSiteMou ? 'SMR' : 'R',
+      documentBrand: isSiteMou ? 'sitemou' : undefined,
       invoiceType: '11.2', // Retail Service Receipt
       source,
       externalId: payment.stripeSessionId || null,
@@ -259,6 +263,8 @@ const createReceipt = async (req, res) => {
         mark: receipt.aadeInfo?.mark || null,
         qrCode: receipt.aadeInfo?.qrUrl || null,
         status: receipt.aadeStatus,
+        documentBrand: receipt.documentBrand,
+        issuerVat: receipt.issuer?.vatNumber,
         totalAmount: receipt.totals.totalAmount,
         errors: aadeResult?.errors || null
       }
@@ -302,6 +308,8 @@ const getReceipt = async (req, res) => {
         mark: receipt.aadeInfo?.mark || null,
         qrCode: receipt.aadeInfo?.qrUrl || null,
         status: receipt.aadeStatus,
+        documentBrand: receipt.documentBrand,
+        issuerVat: receipt.issuer?.vatNumber,
         totalAmount: receipt.totals.totalAmount,
         issueDate: receipt.issueDate,
         customer: {
@@ -348,6 +356,8 @@ const getReceiptByExternalId = async (req, res) => {
         mark: receipt.aadeInfo?.mark || null,
         qrCode: receipt.aadeInfo?.qrUrl || null,
         status: receipt.aadeStatus,
+        documentBrand: receipt.documentBrand,
+        issuerVat: receipt.issuer?.vatNumber,
         totalAmount: receipt.totals.totalAmount
       }
     });
@@ -406,7 +416,9 @@ const getReceiptPDF = async (req, res) => {
 const createInvoice = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const source = req.apiSource || 'api';
+    const source = req.body.documentBrand === 'sitemou' ? 'api' : (req.apiSource || 'api');
+    const isSiteMou = req.body.documentBrand === 'sitemou';
+    try { sitemouDocument.validate(req.body, !!req.body.counterpart); } catch(e) { return res.status(400).json({success:false,message:e.message}); }
 
     const {
       counterpart,
@@ -475,7 +487,7 @@ const createInvoice = async (req, res) => {
     }));
 
     // Generate invoice number (A series for B2B invoices)
-    const invoiceNumber = await Invoice.generateInvoiceNumber(userId, 'A');
+    const invoiceNumber = (isSiteMou ? await sitemouDocument.number(userId,'invoice') : await Invoice.generateInvoiceNumber(userId, 'A'));
 
     // Determine invoice type based on counterpart country
     let finalInvoiceType = invoiceType || '2.1';
@@ -537,7 +549,7 @@ const createInvoice = async (req, res) => {
 
     // Build invoice details from items
     const invoiceDetails = items.map((item, index) => {
-      const netValue = (item.quantity || 1) * item.unitPrice;
+      const netValue = isSiteMou ? sitemouDocument.money(item).netValue : (item.quantity || 1) * item.unitPrice;
 
       // Determine VAT category based on invoice type
       let vatCategory = item.vatCategory || '1';
@@ -549,7 +561,7 @@ const createInvoice = async (req, res) => {
         vatRate = 0;
       }
 
-      const vatAmount = netValue * vatRate;
+      const vatAmount = isSiteMou ? sitemouDocument.money(item).vatAmount : netValue * vatRate;
 
       return {
         lineNumber: index + 1,
@@ -557,7 +569,7 @@ const createInvoice = async (req, res) => {
         itemDescription: item.itemDescription || '',
         quantity: item.quantity || 1,
         unit: item.unit || 'pcs',
-        unitPrice: item.unitPrice || 0,
+        unitPrice: isSiteMou ? sitemouDocument.money(item).unitPrice : item.unitPrice || 0,
         netValue: netValue,
         vatCategory: vatCategory,
         vatAmount: vatAmount,
@@ -578,7 +590,8 @@ const createInvoice = async (req, res) => {
     const invoice = await Invoice.create({
       userId,
       invoiceNumber,
-      series: 'A',
+      series: isSiteMou ? 'SMI' : 'A',
+      documentBrand: isSiteMou ? 'sitemou' : undefined,
       invoiceType: finalInvoiceType,
       source,
       externalId: reference || null,
@@ -600,10 +613,10 @@ const createInvoice = async (req, res) => {
       },
       payment: {
         method: payment?.method || '3', // Bank transfer default
-        amount: 0, // Not paid yet
-        paidDate: null
+        amount: isSiteMou ? totalAmount : 0,
+        paidDate: isSiteMou ? new Date() : null
       },
-      status: 'sent',
+      status: isSiteMou ? 'paid' : 'sent',
       aadeStatus: 'pending',
       currency: 'EUR',
       notes: notes || ''

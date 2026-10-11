@@ -16,11 +16,8 @@ const apiKeyAuth = async (req, res, next) => {
   try {
     const apiKey = req.headers['x-api-key'];
 
-    console.log('🔑 [API Key Auth] Request received');
-    console.log('🔑 [API Key Auth] Received key:', apiKey ? `${apiKey.substring(0, 8)}...` : 'NONE');
 
     if (!apiKey) {
-      console.log('🔑 [API Key Auth] REJECTED: No API key in header');
       return res.status(401).json({
         success: false,
         message: 'API key required. Include X-API-Key header.'
@@ -31,21 +28,16 @@ const apiKeyAuth = async (req, res, next) => {
     // Format: APP_API_KEY=secretkey:userId
     const guestCodeKey = process.env.GUESTCODE_API_KEY;
 
-    console.log('🔑 [API Key Auth] GUESTCODE_API_KEY env:', guestCodeKey ? 'SET' : 'NOT SET');
 
     let userId = null;
     let appSource = null;
 
     if (guestCodeKey) {
       const [key, configuredUserId] = guestCodeKey.split(':');
-      console.log('🔑 [API Key Auth] Expected key:', key ? `${key.substring(0, 8)}...` : 'NONE');
-      console.log('🔑 [API Key Auth] Configured userId:', configuredUserId || 'NONE');
-      console.log('🔑 [API Key Auth] Key match:', apiKey === key);
 
       if (apiKey === key && configuredUserId) {
         userId = configuredUserId;
         appSource = 'guestcode';
-        console.log('🔑 [API Key Auth] ✅ Key validated successfully');
       }
     }
 

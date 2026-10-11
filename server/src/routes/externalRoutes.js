@@ -12,6 +12,7 @@ const {
 
 // All external routes require API key authentication
 router.use(apiKeyAuth);
+router.get('/capabilities', async(req,res,next)=>{try{const settings=await require('../models/settingsModel').findOne({userId:req.user.userId});res.json({sitemouDocuments:1,issuerVat:settings?.tax?.afm});}catch(e){next(e)}});
 
 // Receipt routes (B2C - ticket purchases)
 router.post('/receipts', createReceipt);

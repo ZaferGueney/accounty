@@ -84,6 +84,8 @@ const invoiceSchema = new mongoose.Schema({
     default: '2.1' // Service invoice (most common for accounting services)
   },
 
+  documentBrand: { type: String, enum: ['sitemou'], default: undefined },
+
   // Source of the invoice (for tracking external integrations)
   source: {
     type: String,
@@ -494,6 +496,8 @@ const invoiceSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+invoiceSchema.index({userId:1,externalId:1},{unique:true,partialFilterExpression:{documentBrand:'sitemou',externalId:{$type:'string'}}});
 
 // Indexes for efficient querying
 invoiceSchema.index({ userId: 1, invoiceNumber: 1 });
