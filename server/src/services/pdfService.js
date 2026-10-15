@@ -393,6 +393,16 @@ class PDFService {
       `<img src="${invoice.aadeInfo.qrUrl}" alt="AADE QR Code" style="width: 100%; height: 100%; object-fit: contain;">` :
       `<div class="qr-placeholder-content"><span class="qr-icon">⊞</span><div class="qr-text">AADE<br>QR CODE</div></div>`;
 
+    // Issued through an e-invoicing provider: show provider, UID and authentication code
+    const esc = (v) => String(v || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const providerLine = invoice.providerInfo?.provider === 'parochos' && invoice.aadeInfo?.mark
+      ? `<div style="margin-top: 6px; font-size: 7px; color: #666; text-align: center; word-break: break-all;">`
+        + `Πάροχος: PAROCHOS (ΑΦΜ 802023570)`
+        + (invoice.aadeInfo.uid ? `<br>UID: ${esc(invoice.aadeInfo.uid)}` : '')
+        + (invoice.aadeInfo.authenticationCode ? `<br>Auth: ${esc(invoice.aadeInfo.authenticationCode)}` : '')
+        + `</div>`
+      : '';
+
     // Legal form mapping
     const legalFormMap = {
       'individual': '',
@@ -495,6 +505,7 @@ class PDFService {
       '{{bankingDisplay}}': bankingDisplay,
       '{{bankingDetailsHTML}}': bankingDetailsHTML,
       '{{aadeQRCode}}': aadeQRCode,
+      '{{providerLine}}': providerLine,
       '{{companyLogo}}': companyLogo,
       '{{logoContainerClass}}': logoContainerClass,
       '{{footerText}}': footerText,

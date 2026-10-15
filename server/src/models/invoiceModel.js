@@ -44,6 +44,27 @@ const invoiceSchema = new mongoose.Schema({
     }
   },
 
+  // E-invoicing provider (e.g. Parochos) transmission data. Empty when the
+  // invoice went directly to myDATA.
+  providerInfo: {
+    provider: { type: String, enum: ['parochos', null], default: null },
+    environment: { type: String, enum: ['test', 'prod', null], default: null },
+    externalSystemId: { type: String },
+    processId: { type: String },
+    status: { type: Number }, // 0 in progress, 1 completed, 2 failed
+    qrCodeUrl: { type: String }, // provider viewer URL (printed as QR)
+    qrUrlAADE: { type: String },
+    pdfFileUrl: { type: String },
+    publishStatus: { type: Number },
+    lastError: {
+      code: String,
+      category: String,
+      message: String
+    },
+    lastAttemptAt: { type: Date },
+    transmittedAt: { type: Date }
+  },
+
   // Dates
   issueDate: {
     type: Date,
@@ -667,6 +688,45 @@ invoiceSchema.methods.markTransmitted = async function(aadeResponse) {
     action: 'transmitted_aade',
     userId: this.userId,
     description: `Transmitted to AADE with mark: ${aadeResponse.mark}`
+  });
+
+  await this.save();
+};
+
+// Store the outcome of an e-invoicing provider attempt (success or not) without saving.
+invoiceSchema.methods.applyProviderResult = function(result, environment) {
+  if (!this.providerInfo) this.providerInfo = {};
+  const p = this.providerInfo;
+  p.provider = result.provider || 'parochos';
+  if (environment) p.environment = environment;
+  if (result.externalSystemId) p.externalSystemId = result.externalSystemId;
+  if (result.processId) p.processId = result.processId;
+  if (result.status !== undefined && result.status !== null) p.status = result.status;
+  if (result.qrCodeUrl) p.qrCodeUrl = result.qrCodeUrl;
+  if (result.qrUrlAADE) p.qrUrlAADE = result.qrUrlAADE;
+  if (result.pdfFileUrl) p.pdfFileUrl = result.pdfFileUrl;
+  if (result.publishStatus !== undefined && result.publishStatus !== null) p.publishStatus = result.publishStatus;
+  p.lastAttemptAt = new Date();
+  const err = (result.errors || [])[0];
+  p.lastError = err ? { code: err.code, category: err.category || undefined, message: err.message } : undefined;
+  if (result.success) p.transmittedAt = new Date();
+};
+
+// Mark as transmitted through an e-invoicing provider (MARK/UID come from AADE via the provider)
+invoiceSchema.methods.markTransmittedViaProvider = async function(result, { qrDataUrl, environment } = {}) {
+  this.applyProviderResult(result, environment);
+  this.aadeStatus = 'transmitted';
+  this.transmissionDate = new Date();
+  this.aadeInfo.transmissionFailure = null;
+  if (result.mark) this.aadeInfo.mark = result.mark;
+  if (result.uid) this.aadeInfo.uid = result.uid;
+  if (result.authenticationCode) this.aadeInfo.authenticationCode = result.authenticationCode;
+  if (qrDataUrl) this.aadeInfo.qrUrl = qrDataUrl;
+
+  this.modifications.push({
+    action: 'transmitted_aade',
+    userId: this.userId,
+    description: `Transmitted via ${this.providerInfo.provider} with mark: ${result.mark}`
   });
 
   await this.save();

@@ -7,6 +7,8 @@ const Service = require('../models/serviceModel');
 const pdfService = require('../services/pdfService');
 const aadeService = require('../services/aadeService');
 const aadeTransformer = require('../services/aadeTransformer');
+const einvoiceService = require('../services/einvoiceService');
+const { getParochosService, ParochosError } = require('../services/parochosService');
 const path = require('path');
 const fs = require('fs').promises;
 const crypto = require('crypto');
@@ -24,6 +26,21 @@ const decryptKey = (encryptedText) => {
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
   return decrypted;
+};
+
+// Submit through the configured e-invoicing provider (EINVOICE_PROVIDER=parochos).
+// Returns null when transmitted, otherwise sends the error/pending response.
+const submitInvoiceViaProvider = async (invoice, res) => {
+  const r = await einvoiceService.submitViaProvider(invoice);
+  if (r.outcome === 'transmitted') return null;
+  await invoice.populate(['customerId', 'clientId']);
+  return res.status(r.httpStatus || 400).json({
+    success: r.outcome === 'pending',
+    pending: r.outcome === 'pending',
+    message: r.message,
+    errors: r.errors,
+    invoice
+  });
 };
 
 // Helper: Auto-create services from invoice line items
@@ -287,8 +304,11 @@ const createInvoice = async (req, res) => {
       status: invoiceData.status || 'draft'
     });
 
-    // If status is 'sent', submit to AADE
-    if (invoiceData.status === 'sent') {
+    // If status is 'sent', submit through the e-invoicing provider or directly to AADE
+    if (invoiceData.status === 'sent' && einvoiceService.usesProvider()) {
+      const sent = await submitInvoiceViaProvider(invoice, res);
+      if (sent) return sent;
+    } else if (invoiceData.status === 'sent') {
       try {
         console.log('📤 Submitting invoice to AADE...', invoice.invoiceNumber);
 
@@ -527,8 +547,11 @@ const updateInvoice = async (req, res) => {
 
     await invoice.save();
 
-    // If user wants to send, try AADE submission
-    if (shouldTryAADE) {
+    // If user wants to send, submit through the e-invoicing provider or directly to AADE
+    if (shouldTryAADE && einvoiceService.usesProvider()) {
+      const sent = await submitInvoiceViaProvider(invoice, res);
+      if (sent) return sent;
+    } else if (shouldTryAADE) {
       try {
         console.log('📤 Submitting updated invoice to AADE...', invoice.invoiceNumber);
 
@@ -967,6 +990,33 @@ const cancelAADEInvoice = async (req, res) => {
 
     console.log('🚫 Cancelling AADE invoice:', invoice.invoiceNumber, 'MARK:', invoice.aadeInfo.mark);
 
+    // Invoices issued through a provider are cancelled through that provider
+    if (invoice.providerInfo?.provider === 'parochos') {
+      try {
+        const result = await getParochosService().cancel({
+          mark: invoice.aadeInfo.mark,
+          invoiceType: invoice.invoiceType
+        });
+        if (!result.success) {
+          return res.status(400).json({ success: false, message: 'Parochos rejected invoice cancellation', errors: result.errors });
+        }
+        invoice.aadeStatus = 'cancelled';
+        invoice.status = 'cancelled';
+        invoice.aadeInfo.cancelledByMark = result.cancellationMark;
+        invoice.modifications.push({
+          action: 'cancelled',
+          userId: req.user.userId,
+          description: `Cancelled via Parochos with cancellation MARK: ${result.cancellationMark}`
+        });
+        await invoice.save();
+        await invoice.populate(['customerId', 'clientId']);
+        return res.json({ success: true, message: 'Invoice cancelled via Parochos', cancellationMark: result.cancellationMark, invoice });
+      } catch (err) {
+        const notCancellable = err instanceof ParochosError && err.code === 'NOT_CANCELLABLE';
+        return res.status(notCancellable ? 400 : 502).json({ success: false, message: err.message });
+      }
+    }
+
     // Get user settings for AADE credentials
     const settings = await Settings.findOne({ userId: req.user.userId });
 
@@ -1052,6 +1102,27 @@ const cancelAADEInvoice = async (req, res) => {
   }
 };
 
+// @desc    Refresh e-invoicing provider status (e.g. invoice still processing at Parochos)
+// @route   POST /api/invoices/:id/provider-status
+// @access  Private
+const refreshInvoiceProviderStatus = async (req, res) => {
+  try {
+    const invoice = await Invoice.findOne({ _id: req.params.id, userId: req.user.userId });
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: 'Invoice not found' });
+    }
+    const r = await einvoiceService.refreshProviderStatus(invoice);
+    if (r.outcome === 'error') {
+      return res.status(r.httpStatus || 400).json({ success: false, message: r.message });
+    }
+    await invoice.populate(['customerId', 'clientId']);
+    res.json({ success: r.outcome === 'transmitted', outcome: r.outcome, errors: r.errors, invoice });
+  } catch (error) {
+    console.error('Provider status error:', error.message);
+    res.status(502).json({ success: false, message: `Failed to refresh provider status: ${error.message}` });
+  }
+};
+
 module.exports = {
   getInvoices,
   getInvoice,
@@ -1062,5 +1133,6 @@ module.exports = {
   getInvoiceStats,
   getNextInvoiceNumber,
   previewInvoice,
-  cancelAADEInvoice
+  cancelAADEInvoice,
+  refreshInvoiceProviderStatus
 };

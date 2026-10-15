@@ -11,7 +11,8 @@ const {
   getInvoiceStats,
   getNextInvoiceNumber,
   previewInvoice,
-  cancelAADEInvoice
+  cancelAADEInvoice,
+  refreshInvoiceProviderStatus
 } = require('../controllers/invoiceController');
 
 // Protect all routes
@@ -35,5 +36,6 @@ router.route('/:id')
 // Action routes
 router.post('/:id/pay', markInvoicePaid);
 router.post('/:id/cancel-aade', cancelAADEInvoice);
+router.post('/:id/provider-status', refreshInvoiceProviderStatus);
 
 module.exports = router;
