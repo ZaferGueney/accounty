@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/userModel');
 const { redisUtils } = require('../config/redis');
 
@@ -60,12 +61,14 @@ const protect = async (req, res, next) => {
       });
     }
 
-    // Add user to request
-    req.user = { userId: user._id, user };
+    // Add user to request. A cached user is plain JSON (_id is a string), a
+    // fresh one has an ObjectId - normalise so queries and aggregate $match
+    // stages (which do not cast) always get an ObjectId.
+    const rawId = user._id || decoded.userId;
+    const userId = mongoose.isValidObjectId(rawId) ? new mongoose.Types.ObjectId(String(rawId)) : rawId;
+    req.user = { userId, user };
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error);
-    
     // If access token is expired, return specific error for frontend to handle
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
@@ -75,10 +78,22 @@ const protect = async (req, res, next) => {
       });
     }
     
-    return res.status(401).json({
+    if (error.name === 'JsonWebTokenError' || error.name === 'NotBeforeError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token',
+        error: error.message
+      });
+    }
+
+    // Anything else (database not reachable, timeout...) is a server-side
+    // problem, not a bad token. Answering 401 here made the client try a
+    // refresh and bounce the user to the login page on a temporary hiccup.
+    console.error('Auth middleware error:', error.message);
+    return res.status(503).json({
       success: false,
-      message: 'Invalid token',
-      error: error.message
+      code: 'AUTH_UNAVAILABLE',
+      message: 'Could not verify your session right now. Please try again in a moment.'
     });
   }
 };

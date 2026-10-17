@@ -63,9 +63,23 @@ setInterval(() => {
 // while. Without this every request pays the full retry timeout while the
 // network is down, which is what makes login "hang then fail".
 const OUTAGE_COOLDOWN_MS = 15000;
+const MAX_OUTAGE_COOLDOWN_MS = 5 * 60 * 1000;
 const FAILURES_BEFORE_TRIP = 2;
+// Hard cap per Redis call (incl. the client's own retries). Upstash is a cache
+// here; a slow answer must never hold up a request - fall back instead.
+const REDIS_OP_TIMEOUT_MS = Number(process.env.REDIS_OP_TIMEOUT_MS || 1500);
 let consecutiveFailures = 0;
 let skipRedisUntil = 0;
+
+const withTimeout = (promise, ms) => {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+    })
+  ]).finally(() => clearTimeout(timer));
+};
 
 const redisAvailable = () => redisConfigured && Date.now() >= skipRedisUntil;
 
@@ -75,7 +89,7 @@ const exec = async (label, operation) => {
   if (!redisAvailable()) return { ok: false };
 
   try {
-    const value = await operation();
+    const value = await withTimeout(Promise.resolve().then(operation), REDIS_OP_TIMEOUT_MS);
     if (consecutiveFailures > 0) {
       console.log('✅ Upstash Redis reachable again');
       consecutiveFailures = 0;
@@ -84,11 +98,16 @@ const exec = async (label, operation) => {
   } catch (error) {
     consecutiveFailures += 1;
     if (consecutiveFailures >= FAILURES_BEFORE_TRIP) {
-      skipRedisUntil = Date.now() + OUTAGE_COOLDOWN_MS;
+      // Back off longer while the outage lasts (15s, 30s, 60s ... max 5 min).
+      const trips = consecutiveFailures - FAILURES_BEFORE_TRIP;
+      skipRedisUntil = Date.now() + Math.min(MAX_OUTAGE_COOLDOWN_MS, OUTAGE_COOLDOWN_MS * 2 ** trips);
     }
-    console.error(
-      `Redis ${label} failed (${consecutiveFailures}x): ${error.message} - serving from in-memory fallback`
-    );
+    // Log the first failures and then only occasionally, not on every request.
+    if (consecutiveFailures <= 3 || consecutiveFailures % 50 === 0) {
+      console.error(
+        `Redis ${label} failed (${consecutiveFailures}x): ${error.message} - serving from in-memory fallback`
+      );
+    }
     return { ok: false };
   }
 };
@@ -97,7 +116,7 @@ const exec = async (label, operation) => {
 const testRedisConnection = async () => {
   if (!redisConfigured) return false;
   try {
-    await redis.ping();
+    await withTimeout(redis.ping(), 5000);
     console.log('✅ Upstash Redis connection successful');
     return true;
   } catch (error) {
