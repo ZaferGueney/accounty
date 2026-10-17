@@ -713,8 +713,17 @@ invoiceSchema.statics.getRevenueStats = async function(userId, startDate, endDat
     }
   ];
 
-  const stats = await this.aggregate(pipeline);
-  return stats.length > 0 ? stats[0] : {
+  // What is overdue *now* does not depend on the selected issue-date range
+  // (an invoice from last year that is still unpaid is overdue today).
+  const uid = new mongoose.Types.ObjectId(String(userId));
+  const [stats, overdueAllTime] = await Promise.all([
+    this.aggregate(pipeline),
+    this.aggregate([
+      { $match: { userId: uid, status: { $in: ['sent', 'overdue'] }, dueDate: { $lt: now } } },
+      { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: '$totals.totalAmount' } } }
+    ])
+  ]);
+  const result = stats.length > 0 ? stats[0] : {
     totalInvoices: 0,
     totalRevenue: 0,
     paidInvoices: 0,
@@ -722,6 +731,9 @@ invoiceSchema.statics.getRevenueStats = async function(userId, startDate, endDat
     overdueInvoices: 0,
     overdueRevenue: 0
   };
+  result.overdueInvoices = overdueAllTime[0]?.count || 0;
+  result.overdueRevenue = overdueAllTime[0]?.amount || 0;
+  return result;
 };
 
 // Instance method to mark as transmitted to AADE
