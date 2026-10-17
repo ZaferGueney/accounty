@@ -1,4 +1,6 @@
-require('dotenv').config();
+// The project .env wins over variables inherited from the launching shell
+// (e.g. another app's MONGODB_URI). Render has no .env file, so its settings stand.
+require('dotenv').config({ override: true });
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');

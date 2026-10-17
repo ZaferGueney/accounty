@@ -177,7 +177,9 @@ class PDFService {
   }
 
   async launchBrowser() {
-    const isProduction = process.env.NODE_ENV === 'production';
+    // @sparticuz/chromium only ships a Linux binary: a local run on the Render
+    // .env (NODE_ENV=production) on Windows/macOS must still use system Chrome.
+    const isProduction = process.env.NODE_ENV === 'production' && process.platform === 'linux';
     let launchOptions;
 
     if (isProduction) {
