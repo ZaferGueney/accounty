@@ -120,20 +120,37 @@ ${isRetailReceipt ? '' : this.generateB2BCounterpart(invoice)}
   }
 
   /**
+   * Income classifications of a line with amounts myDATA accepts: they must
+   * add up to the line net value. A single classification always gets the
+   * net value (stored amounts can be 0 or stale, e.g. on duplicated
+   * invoices); several are kept only if they already add up, otherwise the
+   * whole net value goes to the first one.
+   */
+  lineClassifications(line) {
+    const list = (line.incomeClassification || []).filter(Boolean);
+    if (list.length === 0) return [];
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const net = round2(line.netValue);
+    const category = (c) => c.categoryId || c.classificationCategory;
+    if (list.length > 1) {
+      const sum = round2(list.reduce((s, c) => s + (Number(c.amount) || 0), 0));
+      if (sum === net && list.every((c) => Number(c.amount) > 0)) {
+        return list.map((c) => ({ classificationType: c.classificationType, categoryId: category(c), amount: round2(c.amount) }));
+      }
+    }
+    return [{ classificationType: list[0].classificationType, categoryId: category(list[0]), amount: net }];
+  }
+
+  /**
    * Generate income classification XML for invoice line
    */
   generateIncomeClassification(line) {
-    if (!line.incomeClassification || line.incomeClassification.length === 0) {
-      return '';
-    }
-
-    const classification = line.incomeClassification[0];
-    return `
+    return this.lineClassifications(line).map((classification) => `
         <incomeClassification>
           <icls:classificationType>${classification.classificationType}</icls:classificationType>
           <icls:classificationCategory>${classification.categoryId}</icls:classificationCategory>
-          <icls:amount>${(classification.amount || line.netValue).toFixed(2)}</icls:amount>
-        </incomeClassification>`;
+          <icls:amount>${classification.amount.toFixed(2)}</icls:amount>
+        </incomeClassification>`).join('');
   }
 
   /**
@@ -141,32 +158,18 @@ ${isRetailReceipt ? '' : this.generateB2BCounterpart(invoice)}
    * Aggregates all line-level classifications for the summary section
    */
   generateSummaryClassifications(invoice) {
-    // Collect all classifications from invoice lines
     const classificationsMap = new Map();
 
     invoice.invoiceDetails.forEach(line => {
-      if (line.incomeClassification && line.incomeClassification.length > 0) {
-        const classification = line.incomeClassification[0];
+      this.lineClassifications(line).forEach((classification) => {
         const key = `${classification.classificationType}_${classification.categoryId}`;
-
-        const amount = classification.amount || line.netValue;
-
         if (classificationsMap.has(key)) {
-          classificationsMap.get(key).amount += amount;
+          classificationsMap.get(key).amount += classification.amount;
         } else {
-          classificationsMap.set(key, {
-            classificationType: classification.classificationType,
-            categoryId: classification.categoryId,
-            amount: amount
-          });
+          classificationsMap.set(key, { ...classification });
         }
-      }
+      });
     });
-
-    // Generate XML for all classifications
-    if (classificationsMap.size === 0) {
-      return '';
-    }
 
     let xml = '';
     classificationsMap.forEach(classification => {

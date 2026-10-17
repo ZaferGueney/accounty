@@ -118,12 +118,13 @@ function buildLine(line, index, invoice) {
     vatExemption: line.vatExemptionCategory || invoice.vatExemptionCategory
   });
 
-  const classifications = (line.incomeClassification || []).filter(Boolean);
+  // Amounts recomputed from the line net value (see aadeTransformer.lineClassifications)
+  const classifications = aadeTransformer.lineClassifications({ ...line, netValue });
   if (classifications.length) {
     detail.incomeClassification = classifications.map((c) => ({
       classificationType: c.classificationType,
-      classificationCategory: c.categoryId || c.classificationCategory,
-      amount: round2(c.amount || netValue)
+      classificationCategory: c.categoryId,
+      amount: c.amount
     }));
   }
   return detail;
