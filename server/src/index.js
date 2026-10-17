@@ -20,48 +20,88 @@ const serviceRoutes = require('./routes/serviceRoutes');
 const app = express();
 const PORT = process.env.PORT || 7842;
 
-// Database connection
+// ---------------------------------------------------------------- startup
+// The HTTP port opens right away (Render and the local client expect it), but
+// /api requests wait until MongoDB is connected instead of failing or hanging
+// on Mongoose's command buffer. That window right after a (re)start is what
+// used to produce "random error, reload and it works".
+const READY_WAIT_MS = Number(process.env.READY_WAIT_MS || 20000);
+const state = { dbReady: false, startedAt: Date.now(), lastDbError: null };
+let resolveDbReady;
+let dbReadyPromise = new Promise((resolve) => { resolveDbReady = resolve; });
+
+mongoose.connection.on('connected', () => {
+  state.dbReady = true;
+  resolveDbReady();
+});
+mongoose.connection.on('disconnected', () => {
+  if (!state.dbReady) return;
+  state.dbReady = false;
+  console.warn('⚠️  MongoDB disconnected - requests will wait for the reconnect');
+  dbReadyPromise = new Promise((resolve) => { resolveDbReady = resolve; });
+});
+mongoose.connection.on('reconnected', () => {
+  state.dbReady = true;
+  resolveDbReady();
+  console.log('✅ MongoDB reconnected');
+});
+
 const connectDB = async () => {
-  try {
-    if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is not set');
-    // MONGODB_DB lets a local/test run point at another database on the same cluster
-    const conn = await mongoose.connect(process.env.MONGODB_URI, process.env.MONGODB_DB ? { dbName: process.env.MONGODB_DB } : {});
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-  } catch (error) {
-    console.error('Database connection error:', error);
+  if (!process.env.MONGODB_URI) {
+    console.error('Database connection error: MONGODB_URI is not set');
     process.exit(1);
+  }
+  // MONGODB_DB lets a local/test run point at another database on the same cluster
+  const options = {
+    serverSelectionTimeoutMS: 15000,
+    ...(process.env.MONGODB_DB ? { dbName: process.env.MONGODB_DB } : {})
+  };
+  // Mongoose does not retry the *initial* connection; a DNS/wifi blip at boot
+  // must not leave the server up but permanently without a database.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const conn = await mongoose.connect(process.env.MONGODB_URI, options);
+      console.log(`MongoDB Connected: ${conn.connection.host} (db: ${conn.connection.name})`);
+      return;
+    } catch (error) {
+      state.lastDbError = error.message;
+      const delay = Math.min(30000, 2000 * attempt);
+      console.error(`Database connection failed (attempt ${attempt}): ${error.message} - retrying in ${delay / 1000}s`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
   }
 };
 
-// Test services on startup
+const waitForDb = (ms) => state.dbReady
+  ? Promise.resolve(true)
+  : Promise.race([
+      dbReadyPromise.then(() => true),
+      new Promise((r) => setTimeout(() => r(false), ms).unref())
+    ]);
+
+// Background checks: none of these may block or break request handling.
 const testServices = async () => {
-  // Test database connection
-  await connectDB();
-  
-  // Test Redis connection
   await testRedisConnection();
-  
-  // Test AADE API connection
-  console.log('\n🇬🇷 Testing AADE myDATA API...');
+
+  console.log('🇬🇷 Testing AADE myDATA API...');
   const aadeResult = await aadeService.testConnection();
-  
   if (!aadeResult.success) {
     console.warn('⚠️  AADE API not available - invoicing features will be limited');
     console.warn(`   Reason: ${aadeResult.message}`);
-    
-    // Don't exit the server, just warn the user
     if (aadeResult.error === 'Configuration error') {
       console.warn('   💡 Add AADE credentials to .env file when ready for production');
     }
   }
-  
-  console.log('\n🚀 All service checks completed\n');
+  console.log('🚀 All service checks completed');
 };
 
-// Initialize services
-testServices().catch(error => {
-  console.error('Service initialization error:', error);
-  // Don't exit - let the server start even if some services fail
+connectDB();
+testServices().catch((error) => console.error('Service initialization error:', error.message));
+
+// A stray rejected promise must never take the whole server down (Node exits
+// on unhandled rejections by default) - log it and keep serving.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason instanceof Error ? reason.stack : reason);
 });
 
 // Middleware
@@ -72,6 +112,37 @@ app.use(cors({
 app.use(cookieParser()); // Add cookie parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+// Express 5 leaves req.body undefined when a request has no body.
+app.use((req, res, next) => {
+  if (req.body === undefined) req.body = {};
+  next();
+});
+
+// Health check: always answers, reports readiness (503 while not ready).
+app.get('/api/health', (req, res) => {
+  const ready = state.dbReady;
+  res.status(ready ? 200 : 503).json({
+    status: ready ? 'OK' : 'STARTING',
+    ready,
+    message: ready ? 'Accounty server is running' : 'Accounty server is starting up',
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.round((Date.now() - state.startedAt) / 1000),
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+  });
+});
+
+// Hold API requests until the database is ready (bounded wait).
+app.use('/api', async (req, res, next) => {
+  if (state.dbReady) return next();
+  const ready = await waitForDb(READY_WAIT_MS);
+  if (ready) return next();
+  res.set('Retry-After', '5');
+  res.status(503).json({
+    success: false,
+    code: 'STARTING_UP',
+    message: 'Server is starting up or the database is unreachable. Please try again in a few seconds.'
+  });
+});
 
 // Routes
 app.use('/api/users', userRoutes);
@@ -83,16 +154,6 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/banking', bankingRoutes);
 app.use('/api/external', externalRoutes);
 app.use('/api/services', serviceRoutes);
-
-// Basic health check route
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'Accounty server is running',
-    timestamp: new Date().toISOString(),
-    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
-  });
-});
 
 // AADE service status check
 app.get('/api/aade/status', (req, res) => {
@@ -122,8 +183,11 @@ app.post('/api/aade/test', async (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
+  console.error(err.stack || err);
+  if (res.headersSent) return next(err);
+  // Malformed JSON bodies etc. are client errors, not server crashes.
+  const status = err.status || err.statusCode || 500;
+  res.status(status >= 400 && status < 600 ? status : 500).json({
     success: false,
     message: 'Something went wrong!',
     error: process.env.NODE_ENV === 'production' ? {} : err.message
