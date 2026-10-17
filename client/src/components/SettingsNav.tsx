@@ -1,74 +1,50 @@
-import { useState } from 'react';
 import { useTranslation } from 'next-i18next';
+import Icon from '@/components/ui/Icon';
 
 interface SettingsNavProps {
   activeSection: string;
   onSectionChange: (section: string) => void;
 }
 
+export const SETTINGS_SECTIONS = [
+  { key: 'business', icon: 'building' },
+  { key: 'aade', icon: 'shield' },
+  { key: 'banking', icon: 'bank' },
+  { key: 'account', icon: 'user' },
+  { key: 'invoicing', icon: 'file' },
+  { key: 'preferences', icon: 'sliders' },
+  { key: 'subscription', icon: 'card' },
+] as const;
+
+/** Section list: vertical rail on desktop, horizontal scroller on phones. */
 const SettingsNav = ({ activeSection, onSectionChange }: SettingsNavProps) => {
   const { t } = useTranslation('common');
 
-  const sections = [
-    {
-      key: 'account',
-      title: 'Account',
-      icon: '👤'
-    },
-    {
-      key: 'business',
-      title: 'Business',
-      icon: '🏢'
-    },
-    {
-      key: 'banking',
-      title: 'Banking',
-      icon: '🏦'
-    },
-    {
-      key: 'invoicing',
-      title: 'Invoicing',
-      icon: '📄'
-    },
-    {
-      key: 'preferences',
-      title: 'Preferences',
-      icon: '⚙️'
-    },
-    {
-      key: 'subscription',
-      title: 'Subscription',
-      icon: '💎'
-    }
-  ];
-
   return (
-    <div className="w-64 h-full bg-gray-100/70 dark:bg-slate-800/80 backdrop-blur-2xl border-r border-gray-300/40 dark:border-slate-700/50">
-      {/* Header */}
-      <div className="p-6 border-b border-gray-300/30 dark:border-slate-700/40">
-        <h2 className="text-lg font-semibold text-slate-800 dark:text-white">
-          Settings
-        </h2>
-      </div>
-
-      {/* Navigation Items */}
-      <div className="p-4 space-y-1">
-        {sections.map((section) => (
-          <button
-            key={section.key}
-            onClick={() => onSectionChange(section.key)}
-            className={`w-full text-left flex items-center space-x-3 px-3 py-3 rounded-xl transition-all duration-200 ${
-              activeSection === section.key
-                ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-gray-200/60 dark:hover:bg-slate-700/60'
-            }`}
-          >
-            <span className="text-lg">{section.icon}</span>
-            <span className="font-medium">{section.title}</span>
-          </button>
-        ))}
-      </div>
-    </div>
+    <nav aria-label={t('settings')} className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0 lg:overflow-visible">
+      <ul className="flex gap-1 lg:flex-col">
+        {SETTINGS_SECTIONS.map((section) => {
+          const active = activeSection === section.key;
+          return (
+            <li key={section.key} className="shrink-0">
+              <button
+                type="button"
+                onClick={() => onSectionChange(section.key)}
+                aria-current={active ? 'page' : undefined}
+                className={`flex w-full items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+                  active
+                    ? 'bg-surface text-ink shadow-xs ring-1 ring-line'
+                    : 'text-muted hover:bg-sunken hover:text-ink'
+                }`}
+              >
+                <Icon name={section.icon} size={16} className={active ? 'text-accent' : ''} />
+                {t(`settingsNav.${section.key}`)}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
   );
 };
 

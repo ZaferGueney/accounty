@@ -1,250 +1,175 @@
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import ThemeSwitcher from '@/components/ThemeSwitcher';
+import Brand from '@/components/ui/Brand';
+import Icon from '@/components/ui/Icon';
 
+interface NavItem {
+  key: string;
+  href: string;
+  icon: string;
+  label: string;
+}
+
+/**
+ * App navigation.
+ * Desktop: one top bar with section links. Phone: slim top bar plus a bottom tab bar.
+ */
 const DashboardNavigation = () => {
   const { t } = useTranslation('common');
   const router = useRouter();
   const { user, logout } = useAuth();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [userOpen, setUserOpen] = useState(false);
+  const userRef = useRef<HTMLDivElement>(null);
 
-  // Close menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Close menu when route changes
-  useEffect(() => {
-    const handleRouteChange = () => setIsMenuOpen(false);
-    router.events.on('routeChangeStart', handleRouteChange);
-    return () => router.events.off('routeChangeStart', handleRouteChange);
-  }, [router.events]);
-
-  // Build menu items based on user role
-  const baseMenuItems = [
-    {
-      key: 'dashboard',
-      title: t('dashboard'),
-      icon: '🏠',
-      href: '/dashboard',
-      description: t('dashboardDescription')
-    },
-    {
-      key: 'invoices',
-      title: t('invoices'),
-      icon: '📄',
-      href: '/invoices',
-      description: t('invoicesDescription')
-    },
-    {
-      key: 'customers',
-      title: t('customers'),
-      icon: '👤',
-      href: '/customers',
-      description: t('customersDescription'),
-      showIf: !user?.isAccountant // Show for regular users
-    },
-    {
-      key: 'clients',
-      title: t('clients'),
-      icon: '👥',
-      href: '/clients',
-      description: t('clientsDescription'),
-      showIf: user?.isAccountant // Only show for accountants
-    },
-    {
-      key: 'kads',
-      title: 'KAD Management',
-      icon: '📋',
-      href: '/kads',
-      description: 'Manage Greek Activity Codes'
-    },
-    {
-      key: 'reports',
-      title: t('reports'),
-      icon: '📊',
-      href: '/reports',
-      description: t('reportsDescription')
-    },
-    {
-      key: 'settings',
-      title: t('settings'),
-      icon: '⚙️',
-      href: '/settings',
-      description: t('settingsDescription')
-    }
+  const items: NavItem[] = [
+    { key: 'invoices', href: '/dashboard', icon: 'file', label: t('invoices') },
+    { key: 'customers', href: '/customers', icon: 'users', label: t('customers') },
+    { key: 'kads', href: '/kads', icon: 'list', label: t('nav.kad') },
+    { key: 'settings', href: '/settings', icon: 'settings', label: t('settings') },
   ];
 
-  // Filter menu items based on showIf condition
-  const menuItems = baseMenuItems.filter(item => item.showIf !== false);
+  const isActive = (href: string) => router.pathname === href;
+
+  useEffect(() => {
+    if (!userOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (userRef.current && !userRef.current.contains(e.target as Node)) setUserOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setUserOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [userOpen]);
+
+  useEffect(() => {
+    const close = () => setUserOpen(false);
+    router.events.on('routeChangeStart', close);
+    return () => router.events.off('routeChangeStart', close);
+  }, [router.events]);
 
   const handleLogout = async () => {
-    setIsMenuOpen(false);
+    setUserOpen(false);
     await logout();
   };
 
-  const navigateTo = (href: string) => {
-    setIsMenuOpen(false);
-    router.push(href);
-  };
+  const initials =
+    `${user?.firstName?.charAt(0) || ''}${user?.lastName?.charAt(0) || ''}`.toUpperCase() ||
+    user?.email?.charAt(0)?.toUpperCase() ||
+    '?';
 
   return (
-    <nav className="relative z-50 backdrop-blur-2xl bg-gray-100/70 dark:bg-slate-900/70 border-b border-gray-300/30 dark:border-slate-700/40 shadow-lg shadow-gray-400/10 dark:shadow-slate-900/20">
-      {/* Background Effects */}
-      <div className="absolute inset-0 bg-gradient-to-b from-gray-50/60 via-gray-100/40 to-gray-200/60 dark:from-slate-800/60 dark:via-slate-900/40 dark:to-slate-950/60"></div>
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-gray-200/20 to-transparent dark:via-slate-700/20"></div>
-      
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          {/* Left side - Logo + Burger Menu */}
-          <div className="flex items-center space-x-4">
-            {/* Burger Menu Button */}
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="p-2 rounded-xl bg-gray-200/60 dark:bg-slate-700/60 hover:bg-gray-300/60 dark:hover:bg-slate-600/60 transition-all duration-200 group relative z-10"
-              aria-label="Toggle menu"
-            >
-              <div className="w-5 h-5 flex flex-col justify-center items-center space-y-1">
-                <span className={`block w-5 h-0.5 bg-slate-700 dark:bg-white transition-all duration-200 ${
-                  isMenuOpen ? 'rotate-45 translate-y-1.5' : ''
-                }`}></span>
-                <span className={`block w-5 h-0.5 bg-slate-700 dark:bg-white transition-all duration-200 ${
-                  isMenuOpen ? 'opacity-0' : ''
-                }`}></span>
-                <span className={`block w-5 h-0.5 bg-slate-700 dark:bg-white transition-all duration-200 ${
-                  isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''
-                }`}></span>
-              </div>
-            </button>
+    <>
+      <header className="sticky top-0 z-40 border-b border-line bg-canvas/85 backdrop-blur-md supports-[backdrop-filter]:bg-canvas/75">
+        <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4 sm:px-6 lg:px-8">
+          <Link href="/dashboard" className="shrink-0 rounded-md" aria-label="Accounty">
+            <Brand />
+          </Link>
 
-            {/* Logo */}
-            <button 
-              onClick={() => router.push('/dashboard')}
-              className="flex items-center space-x-3 relative z-10 group"
-            >
-              <div className="relative">
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/25 group-hover:shadow-blue-500/40 transition-all">
-                  <span className="text-white font-bold text-sm">A</span>
-                </div>
-              </div>
-              <h1 className="text-xl font-semibold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent hidden sm:block">
-                Accounty
-              </h1>
-            </button>
-          </div>
+          <nav aria-label={t('nav.main')} className="hidden h-full items-stretch gap-1 md:flex">
+            {items.map((item) => {
+              const active = isActive(item.href);
+              return (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={`relative flex items-center gap-2 px-3 text-sm font-medium transition-colors ${
+                    active ? 'text-ink' : 'text-muted hover:text-ink'
+                  }`}
+                >
+                  <Icon name={item.icon} size={16} />
+                  {item.label}
+                  {active && <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-ink" />}
+                </Link>
+              );
+            })}
+          </nav>
 
-          {/* Right side - Controls */}
-          <div className="flex items-center space-x-4 relative z-10">
+          <div className="ml-auto flex items-center gap-1">
             <LanguageSwitcher />
-            <div className="w-px h-6 bg-gradient-to-b from-transparent via-gray-400/60 to-transparent dark:via-slate-600"></div>
             <ThemeSwitcher />
-            <div className="w-px h-6 bg-gradient-to-b from-transparent via-gray-400/60 to-transparent dark:via-slate-600"></div>
-            
-            <div className="flex items-center space-x-3">
-              <span className="text-sm font-medium text-slate-800 dark:text-white hidden sm:block">
-                {t('hi')}, {user?.firstName}
-              </span>
+
+            <div className="relative ml-1" ref={userRef}>
               <button
-                onClick={handleLogout}
-                className="px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                type="button"
+                onClick={() => setUserOpen((o) => !o)}
+                className="flex h-9 items-center gap-2 rounded-full pl-0.5 pr-0.5 transition-colors hover:bg-sunken sm:pr-2.5"
+                aria-haspopup="menu"
+                aria-expanded={userOpen}
+                aria-label={t('nav.account')}
               >
-                {t('logout')}
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent">
+                  {initials}
+                </span>
+                <span className="hidden max-w-[9rem] truncate text-sm font-medium text-ink sm:block">
+                  {user?.firstName || user?.email}
+                </span>
               </button>
+
+              {userOpen && (
+                <div role="menu" className="popover absolute right-0 top-full z-50 mt-1.5 w-64 p-1">
+                  <div className="border-b border-line px-2.5 pb-2.5 pt-2">
+                    <p className="truncate text-sm font-semibold text-ink">
+                      {user?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(' ')}
+                    </p>
+                    <p className="truncate text-xs text-muted">{user?.email}</p>
+                  </div>
+                  <div className="pt-1">
+                    <Link href="/settings" role="menuitem" className="menu-item">
+                      <Icon name="settings" />
+                      {t('settings')}
+                    </Link>
+                    <button role="menuitem" onClick={handleLogout} className="menu-item text-danger hover:text-danger">
+                      <Icon name="logout" />
+                      {t('logout')}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Burger Menu Dropdown */}
-      <div
-        ref={menuRef}
-        className={`absolute top-full left-0 w-full bg-gray-100/95 dark:bg-slate-900/95 backdrop-blur-2xl border-b border-gray-300/30 dark:border-slate-700/40 shadow-2xl transition-all duration-300 ${
-          isMenuOpen ? 'opacity-100 visible transform translate-y-0' : 'opacity-0 invisible transform -translate-y-4'
-        }`}
+      {/* Phone: bottom tab bar */}
+      <nav
+        aria-label={t('nav.main')}
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            {menuItems.map((item) => (
-              <button
+        <div className="grid grid-cols-4">
+          {items.map((item) => {
+            const active = isActive(item.href);
+            return (
+              <Link
                 key={item.key}
-                onClick={() => navigateTo(item.href)}
-                className={`text-left p-4 rounded-2xl transition-all duration-200 group hover:scale-105 ${
-                  router.pathname === item.href
-                    ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/25'
-                    : 'bg-gray-50/80 dark:bg-slate-800/80 hover:bg-gray-100/90 dark:hover:bg-slate-700/90 text-slate-800 dark:text-white'
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+                className={`flex h-14 flex-col items-center justify-center gap-1 text-[0.6875rem] font-medium transition-colors ${
+                  active ? 'text-ink' : 'text-muted'
                 }`}
               >
-                <div className="flex flex-col items-center text-center space-y-3">
-                  <div className={`text-3xl ${
-                    router.pathname === item.href
-                      ? 'scale-110'
-                      : 'group-hover:scale-110'
-                  } transition-transform duration-200`}>
-                    {item.icon}
-                  </div>
-                  <div>
-                    <h3 className={`font-semibold ${
-                      router.pathname === item.href
-                        ? 'text-white'
-                        : 'text-slate-800 dark:text-white'
-                    }`}>
-                      {item.title}
-                    </h3>
-                    <p className={`text-sm mt-1 ${
-                      router.pathname === item.href
-                        ? 'text-blue-100'
-                        : 'text-slate-600 dark:text-slate-400'
-                    }`}>
-                      {item.description}
-                    </p>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* User Info Section in Mobile */}
-          <div className="mt-6 sm:hidden">
-            <div className="p-4 bg-gray-50/80 dark:bg-slate-800/80 rounded-2xl">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
-                  <span className="text-white font-medium">
-                    {user?.firstName?.charAt(0)}
-                  </span>
-                </div>
-                <div>
-                  <p className="font-medium text-slate-800 dark:text-white">
-                    {user?.fullName}
-                  </p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    {user?.email}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+                <span
+                  className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${
+                    active ? 'bg-sunken' : ''
+                  }`}
+                >
+                  <Icon name={item.icon} size={18} strokeWidth={active ? 2 : 1.75} />
+                </span>
+                <span className="max-w-full truncate px-1">{item.label}</span>
+              </Link>
+            );
+          })}
         </div>
-      </div>
-
-      {/* Overlay */}
-      {isMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
-          onClick={() => setIsMenuOpen(false)}
-        />
-      )}
-    </nav>
+      </nav>
+    </>
   );
 };
 

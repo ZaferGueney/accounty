@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { useAuth } from '@/contexts/AuthContext';
-import KADManager from '@/components/KADManager';
-import LoadingSpinner from '@/components/LoadingSpinner';
-import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
 import { GetStaticProps } from 'next';
+import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
+import { useTranslation } from 'next-i18next';
+import { useAuth } from '@/contexts/AuthContext';
+import AppShell, { FullPageLoader } from '@/components/AppShell';
+import KADManager from '@/components/KADManager';
 
 const KADManagementPage = () => {
+  const { t } = useTranslation('common');
   const { user, isLoading } = useAuth();
   const router = useRouter();
 
@@ -17,14 +19,18 @@ const KADManagementPage = () => {
   }, [user, isLoading, router]);
 
   if (isLoading) {
-    return <LoadingSpinner />;
+    return <FullPageLoader label={t('common.loading')} />;
   }
 
   if (!user) {
     return null;
   }
 
-  return <KADManager />;
+  return (
+    <AppShell>
+      <KADManager />
+    </AppShell>
+  );
 };
 
 export const getStaticProps: GetStaticProps = async ({ locale }) => {

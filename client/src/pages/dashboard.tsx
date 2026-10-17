@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { GetStaticProps } from 'next';
 import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
@@ -9,25 +9,29 @@ import {
   fetchCompletionStatus as _fetchCompletionStatus,
   fetchSettings as _fetchSettings,
   selectCompletionStatus,
-  selectSettingsLoading
 } from '@/store/slices/settingsSlice';
 
 // Cast thunks to any to avoid TypeScript errors with JS slice
 const fetchCompletionStatus = _fetchCompletionStatus as any;
 const fetchSettings = _fetchSettings as any;
 
-import DashboardNavigation from '@/components/DashboardNavigation';
+import AppShell, { FullPageLoader } from '@/components/AppShell';
 import Setup from '@/components/Setup';
 import Invoice from '@/components/Invoice';
+import EmptyState from '@/components/ui/EmptyState';
+import Button from '@/components/ui/Button';
+
+type CheckState = 'pending' | 'done' | 'failed';
 
 export default function DashboardPage() {
   const { t } = useTranslation('common');
   const router = useRouter();
-  const { isAuthenticated, user, logout, isLoading } = useAuth();
-  
+  const { isAuthenticated, isLoading } = useAuth();
+
   const dispatch = useAppDispatch();
   const completionStatus = useAppSelector(selectCompletionStatus);
-  const settingsLoading = useAppSelector(selectSettingsLoading);
+  const [check, setCheck] = useState<CheckState>('pending');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -36,53 +40,59 @@ export default function DashboardPage() {
   }, [isAuthenticated, isLoading, router]);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      dispatch(fetchSettings());
-      dispatch(fetchCompletionStatus());
-    }
-  }, [isAuthenticated, dispatch]);
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    setCheck('pending');
+    dispatch(fetchSettings());
+    // Wait for the completion check before deciding between the wizard and the app,
+    // so a slow request never flashes the setup wizard.
+    Promise.resolve(dispatch(fetchCompletionStatus()))
+      .then((res: any) => {
+        if (cancelled) return;
+        setCheck(res?.error ? 'failed' : 'done');
+      })
+      .catch(() => !cancelled && setCheck('failed'));
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, dispatch, attempt]);
 
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-200/60 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800 flex items-center justify-center">
-        <div className="text-lg text-slate-700 dark:text-slate-200">Loading...</div>
-      </div>
-    );
+  if (isLoading || (isAuthenticated && check === 'pending')) {
+    return <FullPageLoader label={t('common.loading')} />;
   }
 
   if (!isAuthenticated) {
     return null;
   }
 
+  if (check === 'failed') {
+    return (
+      <AppShell>
+        <div className="card">
+          <EmptyState
+            icon="alertCircle"
+            title={t('errors.loadFailedTitle')}
+            description={t('errors.serverUnreachable')}
+            action={
+              <Button variant="primary" icon="refresh" onClick={() => setAttempt((a) => a + 1)}>
+                {t('common.retry')}
+              </Button>
+            }
+          />
+        </div>
+      </AppShell>
+    );
+  }
+
   // Show setup wizard if settings are not complete
-  // Only wait for initial load, then show setup if not complete
-  if (!isLoading && !completionStatus.isComplete) {
+  if (!completionStatus.isComplete) {
     return <Setup />;
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-200/60 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800 transition-all duration-700">
-      {/* Complex Background Layers */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-gray-100/80 via-gray-50/40 to-gray-200/80 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800"></div>
-        <div className="absolute inset-0 opacity-[0.015] dark:opacity-[0.03]" style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-        }}></div>
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-gradient-to-br from-blue-400/8 via-indigo-400/6 to-purple-600/8 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-gradient-to-tr from-emerald-400/8 via-teal-400/6 to-blue-500/8 rounded-full blur-3xl animate-pulse delay-1000"></div>
-      </div>
-
-      {/* Navigation Header */}
-      <DashboardNavigation />
-
-      {/* Main Content */}
-      <main className="relative px-6 py-8">
-        <div className="max-w-7xl mx-auto">
-          <Invoice />
-        </div>
-      </main>
-    </div>
+    <AppShell>
+      <Invoice />
+    </AppShell>
   );
 }
 
