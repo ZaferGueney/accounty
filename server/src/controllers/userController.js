@@ -41,14 +41,12 @@ const sendTokenResponse = async (user, statusCode, res, req) => {
 
   // Set refresh token cookie (long-lived)
   res.cookie('accounty_refresh_token', refreshToken, cookieOptions);
-  console.log('Setting refresh token cookie:', refreshToken.substring(0, 20) + '...');
   
   // Set access token cookie (same duration as JWT)
   res.cookie('accounty_access_token', accessToken, {
     ...cookieOptions,
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days to match JWT expiration
   });
-  console.log('Setting access token cookie:', accessToken.substring(0, 20) + '...');
   
   // Store session data in Redis (manual session management)
   if (req) {

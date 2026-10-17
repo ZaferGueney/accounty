@@ -9,17 +9,6 @@ class AADEService {
     // Determine environment and select appropriate credentials
     const isProduction = process.env.NODE_ENV === 'production';
 
-    // Debug: Log available environment variables
-    console.log(`\n🔍 AADE Environment Variables Debug:`);
-    console.log(`   NODE_ENV: ${process.env.NODE_ENV}`);
-    console.log(`   isProduction: ${isProduction}`);
-    console.log(`   AADE_PROD_URL: ${process.env.AADE_PROD_URL || 'NOT SET'}`);
-    console.log(`   AADE_DEV_URL: ${process.env.AADE_DEV_URL || 'NOT SET'}`);
-    console.log(`   AADE_PROD_USER_ID: ${process.env.AADE_PROD_USER_ID || 'NOT SET'}`);
-    console.log(`   AADE_DEV_USER_ID: ${process.env.AADE_DEV_USER_ID || 'NOT SET'}`);
-    console.log(`   AADE_PROD_KEY: ${process.env.AADE_PROD_KEY ? process.env.AADE_PROD_KEY.substring(0, 8) + '...' : 'NOT SET'}`);
-    console.log(`   AADE_DEV_KEY: ${process.env.AADE_DEV_KEY ? process.env.AADE_DEV_KEY.substring(0, 8) + '...' : 'NOT SET'}`);
-
     // Select URL based on environment
     this.baseURL = isProduction
       ? process.env.AADE_PROD_URL || 'https://mydatapi.aade.gr'
@@ -34,12 +23,8 @@ class AADEService {
       ? (process.env.AADE_PROD_USER_ID || process.env.AADE_USER_ID)
       : (process.env.AADE_DEV_USER_ID || process.env.AADE_USER_ID);
 
-    // Log which environment and credentials are being used
-    console.log(`\n🔧 AADE Service initialized:`);
-    console.log(`   Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT (TEST)'}`);
-    console.log(`   Endpoint: ${this.baseURL}`);
-    console.log(`   User ID: ${this.aadeUserId}`);
-    console.log(`   Subscription Key: ${this.subscriptionKey ? this.subscriptionKey.substring(0, 8) + '...' : 'NOT SET'}`);
+    // Never log keys or user ids - only whether they are present.
+    console.log(`🔧 AADE myDATA: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT (TEST)'} endpoint ${this.baseURL}, process-level credentials ${this.isConfigured() ? 'set' : 'not set'}`);
 
     // Create axios instance with default headers
     this.client = axios.create({
@@ -201,29 +186,9 @@ class AADEService {
       throw new Error('AADE credentials not provided - missing username or subscription key');
     }
 
-    console.log('📤 Sending invoice to AADE...');
-    console.log('🔑 AADE Authentication Config:', {
-      baseURL: this.baseURL,
-      authenticatingUser: credentials.username,
-      userAFM: process.env.AADE_USER_AFM || 'Not specified',
-      hasKey: !!credentials.subscriptionKey,
-      keyPreview: credentials.subscriptionKey ? `${credentials.subscriptionKey.substring(0, 8)}...` : 'missing',
-      environment: credentials.environment || process.env.NODE_ENV
-    });
-
-    // Extract business AFM from XML to show who the invoice is FROM
-    const businessAFMMatch = invoiceXML.match(/<vatNumber>(\d+)<\/vatNumber>/);
-    const businessAFM = businessAFMMatch ? businessAFMMatch[1] : 'Unknown';
-
-    console.log('📊 Invoice Issuer Info:', {
-      businessAFM: businessAFM,
-      note: `User ${process.env.AADE_USER_AFM || credentials.username} submitting invoice FOR business ${businessAFM}`
-    });
-
-    console.log('📝 Generated XML (first 500 chars):', invoiceXML.substring(0, 500));
-    console.log('📄 FULL XML:');
-    console.log(invoiceXML);
-    console.log('📄 END OF XML\n');
+    const debug = process.env.AADE_DEBUG === '1' || process.env.AADE_DEBUG === 'true';
+    console.log(`📤 Sending invoice to AADE (${this.baseURL}, ${invoiceXML.length} bytes)`);
+    if (debug) console.log('📄 AADE request XML:', invoiceXML);
 
     const requestHeaders = {
       'aade-user-id': credentials.username,
@@ -232,60 +197,20 @@ class AADEService {
       'Accept': 'application/xml'
     };
 
-    console.log('📨 Request Details:');
-    console.log('   URL:', `${this.baseURL}/SendInvoices`);
-    console.log('   Headers:', JSON.stringify(requestHeaders, null, 2));
-    console.log('   Body length:', invoiceXML.length, 'bytes');
-
     try {
-      // Create a new axios instance with request/response interceptors for debugging
-      const debugAxios = axios.create();
-
-      debugAxios.interceptors.request.use(request => {
-        console.log('🔍 AXIOS REQUEST INTERCEPTOR:');
-        console.log('   Method:', request.method?.toUpperCase());
-        console.log('   URL:', request.url);
-        console.log('   Headers:', JSON.stringify(request.headers, null, 2));
-        console.log('   Data type:', typeof request.data);
-        console.log('   Data length:', request.data?.length || 0);
-        return request;
-      });
-
-      debugAxios.interceptors.response.use(
-        response => {
-          console.log('🔍 AXIOS RESPONSE INTERCEPTOR (SUCCESS):');
-          console.log('   Status:', response.status);
-          console.log('   Headers:', JSON.stringify(response.headers, null, 2));
-          return response;
-        },
-        error => {
-          console.log('🔍 AXIOS RESPONSE INTERCEPTOR (ERROR):');
-          if (error.request) {
-            console.log('   Request was made but no response received');
-            console.log('   Request headers:', JSON.stringify(error.config?.headers, null, 2));
-          }
-          if (error.response) {
-            console.log('   Response status:', error.response.status);
-            console.log('   Response headers:', JSON.stringify(error.response.headers, null, 2));
-            console.log('   Response data:', error.response.data);
-          }
-          return Promise.reject(error);
-        }
-      );
-
-      const response = await debugAxios.post(
+      const response = await axios.post(
         `${this.baseURL}/SendInvoices`,
         invoiceXML,
         {
           headers: requestHeaders,
-          timeout: 15000 // 15 seconds for invoice submission
+          // myDATA can be slow; a too-short timeout turns an accepted invoice
+          // into a "network error" and invites a duplicate resubmission.
+          timeout: Number(process.env.AADE_SEND_TIMEOUT_MS || 60000)
         }
       );
 
       console.log('✅ AADE response received (status:', response.status, ')');
-      console.log('📄 AADE RESPONSE XML:');
-      console.log(response.data);
-      console.log('📄 END OF AADE RESPONSE XML\n');
+      if (debug) console.log('📄 AADE response XML:', response.data);
 
       // Parse XML response
       const result = await this.parseResponseXML(response.data);
@@ -296,7 +221,6 @@ class AADEService {
 
       if (error.response) {
         console.error('📊 Response status:', error.response.status);
-        console.error('📋 Response headers:', JSON.stringify(error.response.headers, null, 2));
         console.error('📄 Response data:', typeof error.response.data === 'string' ? error.response.data.substring(0, 500) : JSON.stringify(error.response.data));
 
         // AADE returned error response - try to parse it
@@ -327,26 +251,27 @@ class AADEService {
     }
 
     try {
-      // Use provided credentials or fall back to instance config
-      const config = credentials ? {
-        baseURL: credentials.environment === 'production'
-          ? process.env.AADE_PROD_URL
-          : process.env.AADE_DEV_URL,
+      const creds = credentials || { username: this.aadeUserId, subscriptionKey: this.subscriptionKey };
+      if (!creds.username || !creds.subscriptionKey) {
+        throw new Error('AADE credentials not provided - missing username or subscription key');
+      }
+
+      // Cancel at the same endpoint sendInvoices() transmits to (chosen by
+      // NODE_ENV / AADE_PROD_URL / AADE_DEV_URL). Previously this used
+      // credentials.environment and AADE_*_URL without defaults, so with an
+      // unset URL the request had no host at all, and a MARK issued in
+      // production could be cancelled against the test endpoint.
+      console.log('📨 Calling AADE CancelInvoice endpoint:', `${this.baseURL}/CancelInvoice`);
+
+      const response = await axios.post(`${this.baseURL}/CancelInvoice?mark=${encodeURIComponent(mark)}`, undefined, {
         headers: {
-          'aade-user-id': credentials.username,
-          'Ocp-Apim-Subscription-Key': credentials.subscriptionKey,
+          'aade-user-id': creds.username,
+          'Ocp-Apim-Subscription-Key': creds.subscriptionKey,
           'Content-Type': 'application/xml',
           'Accept': 'application/xml'
-        }
-      } : {};
-
-      const client = credentials ? axios.create(config) : this.client;
-
-      console.log('📨 Calling AADE CancelInvoice endpoint...');
-      console.log('   URL:', `${config.baseURL || this.baseURL}/CancelInvoice?mark=${mark}`);
-
-      // Call AADE CancelInvoice endpoint
-      const response = await client.post(`/CancelInvoice?mark=${mark}`);
+        },
+        timeout: Number(process.env.AADE_SEND_TIMEOUT_MS || 60000)
+      });
 
       console.log('✅ AADE cancellation response received (status:', response.status, ')');
 
@@ -358,15 +283,15 @@ class AADEService {
       });
 
       let result = await parser.parseStringPromise(response.data);
-      console.log('📋 Parsed cancellation response:', JSON.stringify(result, null, 2));
+      if (process.env.AADE_DEBUG) console.log('📋 Parsed cancellation response:', JSON.stringify(result, null, 2));
 
       // Check if response is wrapped in a <string> element (same as sendInvoices)
       if (result.string && result.string._) {
-        console.log('🔍 Detected wrapped XML response in <string> element, parsing inner XML...');
+        if (process.env.AADE_DEBUG) console.log('🔍 Detected wrapped XML response in <string> element, parsing inner XML...');
         const innerXmlString = result.string._;
         // Parse the inner XML string
         result = await parser.parseStringPromise(innerXmlString);
-        console.log('🔍 Re-parsed inner XML structure:', JSON.stringify(result, null, 2));
+        if (process.env.AADE_DEBUG) console.log('🔍 Re-parsed inner XML structure:', JSON.stringify(result, null, 2));
       }
 
       // Extract cancellation info
@@ -427,15 +352,15 @@ class AADEService {
     try {
       let result = await parser.parseStringPromise(xmlString);
 
-      console.log('🔍 Parsed XML structure:', JSON.stringify(result, null, 2));
+      if (process.env.AADE_DEBUG) console.log('🔍 Parsed XML structure:', JSON.stringify(result, null, 2));
 
       // Check if response is wrapped in a <string> element (common with some SOAP/WCF services)
       if (result.string && result.string._) {
-        console.log('🔍 Detected wrapped XML response in <string> element, parsing inner XML...');
+        if (process.env.AADE_DEBUG) console.log('🔍 Detected wrapped XML response in <string> element, parsing inner XML...');
         const innerXmlString = result.string._;
         // Parse the inner XML string
         result = await parser.parseStringPromise(innerXmlString);
-        console.log('🔍 Re-parsed inner XML structure:', JSON.stringify(result, null, 2));
+        if (process.env.AADE_DEBUG) console.log('🔍 Re-parsed inner XML structure:', JSON.stringify(result, null, 2));
       }
 
       // Try different possible XML structures
@@ -444,22 +369,22 @@ class AADEService {
       // Try: ResponseDoc > response (expected structure)
       if (result.ResponseDoc && result.ResponseDoc.response) {
         response = result.ResponseDoc.response;
-        console.log('✅ Found response in ResponseDoc.response');
+        if (process.env.AADE_DEBUG) console.log('✅ Found response in ResponseDoc.response');
       }
       // Try: root > response
       else if (result.response) {
         response = result.response;
-        console.log('✅ Found response in root.response');
+        if (process.env.AADE_DEBUG) console.log('✅ Found response in root.response');
       }
       // Try: ResponseDoc is the response itself
       else if (result.ResponseDoc) {
         response = result.ResponseDoc;
-        console.log('✅ Using ResponseDoc as response');
+        if (process.env.AADE_DEBUG) console.log('✅ Using ResponseDoc as response');
       }
       // Try: root is the response
       else {
         response = result;
-        console.log('✅ Using root as response');
+        if (process.env.AADE_DEBUG) console.log('✅ Using root as response');
       }
 
       if (!response) {
