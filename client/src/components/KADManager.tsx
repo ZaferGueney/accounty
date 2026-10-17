@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'next-i18next';
 import api from '@/utils/api';
+import PageHeader from '@/components/ui/PageHeader';
+import Button from '@/components/ui/Button';
+import Modal from '@/components/ui/Modal';
+import Field from '@/components/ui/Field';
+import Alert from '@/components/ui/Alert';
+import EmptyState from '@/components/ui/EmptyState';
+import Icon from '@/components/ui/Icon';
+import { useToast } from '@/components/ui/Toast';
+import { apiErrorText } from '@/components/ui/format';
 
 interface KAD {
   _id: string;
@@ -28,15 +37,29 @@ interface PaginationData {
   hasPrev: boolean;
 }
 
+const emptyForm: Partial<KAD> = {
+  code: '',
+  description: '',
+  descriptionEN: '',
+  category: '',
+  section: 'A',
+  vatRate: 24,
+  isPopular: false,
+  keywords: [],
+  relatedCodes: [],
+  notes: '',
+};
+
 const KADManager = () => {
   const { t } = useTranslation('common');
-  
+  const toast = useToast();
+
   // State management
   const [kads, setKads] = useState<KAD[]>([]);
   const [pagination, setPagination] = useState<PaginationData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Filters and search
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
@@ -44,27 +67,19 @@ const KADManager = () => {
   const [showPopularOnly, setShowPopularOnly] = useState(false);
   const [sortBy, setSortBy] = useState('code');
   const [currentPage, setCurrentPage] = useState(1);
-  
+
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [selectedKAD, setSelectedKAD] = useState<KAD | null>(null);
-  
+  const [deleteTarget, setDeleteTarget] = useState<KAD | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+
   // Form data
-  const [formData, setFormData] = useState<Partial<KAD>>({
-    code: '',
-    description: '',
-    descriptionEN: '',
-    category: '',
-    section: 'A',
-    vatRate: 24,
-    isPopular: false,
-    keywords: [],
-    relatedCodes: [],
-    notes: ''
-  });
-  
+  const [formData, setFormData] = useState<Partial<KAD>>(emptyForm);
+
   // Bulk upload
   const [bulkData, setBulkData] = useState('');
   const [uploadResult, setUploadResult] = useState<any>(null);
@@ -76,26 +91,26 @@ const KADManager = () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: '50',
-        sort: sortBy
+        sort: sortBy,
       });
-      
+
       if (searchQuery) params.append('search', searchQuery);
       if (selectedSection) params.append('section', selectedSection);
       if (selectedCategory) params.append('category', selectedCategory);
       if (showPopularOnly) params.append('popular', 'true');
-      
+
       const response = await api.get(`/api/kads?${params}`);
-      
+
       if (response.data.success) {
         setKads(response.data.data);
         setPagination(response.data.pagination);
       }
     } catch (error: any) {
-      setError(error.response?.data?.message || 'Failed to fetch KADs');
+      setError(apiErrorText(error, t('kad.errors.fetch')));
     } finally {
       setLoading(false);
     }
@@ -104,55 +119,71 @@ const KADManager = () => {
   // Create KAD
   const createKAD = async () => {
     try {
+      setSaving(true);
+      setModalError(null);
       const response = await api.post('/api/kads', formData);
       if (response.data.success) {
         setShowCreateModal(false);
         resetForm();
         fetchKADs();
+        toast.success(t('kad.created'));
       }
     } catch (error: any) {
-      setError(error.response?.data?.message || 'Failed to create KAD');
+      setModalError(apiErrorText(error, t('kad.errors.create')));
+    } finally {
+      setSaving(false);
     }
   };
 
   // Update KAD
   const updateKAD = async () => {
     try {
+      setSaving(true);
+      setModalError(null);
       const response = await api.put(`/api/kads/${selectedKAD?.code}`, formData);
       if (response.data.success) {
         setShowEditModal(false);
         setSelectedKAD(null);
         resetForm();
         fetchKADs();
+        toast.success(t('kad.updated'));
       }
     } catch (error: any) {
-      setError(error.response?.data?.message || 'Failed to update KAD');
+      setModalError(apiErrorText(error, t('kad.errors.update')));
+    } finally {
+      setSaving(false);
     }
   };
 
-  // Delete KAD
+  // Delete KAD (confirmed through the delete dialog)
   const deleteKAD = async (code: string) => {
-    if (!confirm('Are you sure you want to delete this KAD?')) return;
-    
     try {
+      setSaving(true);
       const response = await api.delete(`/api/kads/${code}`);
       if (response.data.success) {
+        setDeleteTarget(null);
         fetchKADs();
+        toast.success(t('kad.deleted'));
       }
     } catch (error: any) {
-      setError(error.response?.data?.message || 'Failed to delete KAD');
+      setDeleteTarget(null);
+      setError(apiErrorText(error, t('kad.errors.delete')));
+    } finally {
+      setSaving(false);
     }
   };
 
   // Bulk upload
   const handleBulkUpload = async () => {
     try {
+      setSaving(true);
+      setModalError(null);
       const kadsData = JSON.parse(bulkData);
       const response = await api.post('/api/kads/bulk-upload', {
         kads: kadsData,
-        replaceExisting: true
+        replaceExisting: true,
       });
-      
+
       if (response.data.success) {
         setUploadResult(response.data);
         setBulkData('');
@@ -160,32 +191,24 @@ const KADManager = () => {
       }
     } catch (error: any) {
       if (error instanceof SyntaxError) {
-        setError('Invalid JSON format');
+        setModalError(t('kad.errors.invalidJson'));
       } else {
-        setError(error.response?.data?.message || 'Failed to upload KADs');
+        setModalError(apiErrorText(error, t('kad.errors.upload')));
       }
+    } finally {
+      setSaving(false);
     }
   };
 
   // Reset form
   const resetForm = () => {
-    setFormData({
-      code: '',
-      description: '',
-      descriptionEN: '',
-      category: '',
-      section: 'A',
-      vatRate: 24,
-      isPopular: false,
-      keywords: [],
-      relatedCodes: [],
-      notes: ''
-    });
+    setFormData(emptyForm);
   };
 
   // Open edit modal
   const openEditModal = (kad: KAD) => {
     setSelectedKAD(kad);
+    setModalError(null);
     setFormData({
       code: kad.code,
       description: kad.description,
@@ -196,27 +219,46 @@ const KADManager = () => {
       isPopular: kad.isPopular,
       keywords: kad.keywords,
       relatedCodes: kad.relatedCodes,
-      notes: kad.notes
+      notes: kad.notes,
     });
     setShowEditModal(true);
   };
 
+  const closeFormModal = () => {
+    setShowCreateModal(false);
+    setShowEditModal(false);
+    setSelectedKAD(null);
+    setModalError(null);
+    resetForm();
+  };
+
+  const closeBulk = () => {
+    setShowBulkUpload(false);
+    setBulkData('');
+    setUploadResult(null);
+    setModalError(null);
+  };
+
   // Handle input changes
   const handleInputChange = (field: string, value: any) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [field]: value
+      [field]: value,
     }));
   };
 
   // Handle array inputs
   const handleArrayInput = (field: 'keywords' | 'relatedCodes', value: string) => {
-    const array = value.split(',').map(item => item.trim()).filter(item => item);
+    const array = value
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item);
     handleInputChange(field, array);
   };
 
   useEffect(() => {
     fetchKADs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, sortBy, selectedSection, selectedCategory, showPopularOnly]);
 
   useEffect(() => {
@@ -228,344 +270,440 @@ const KADManager = () => {
     fetchKADs();
   };
 
+  const formOpen = showCreateModal || showEditModal;
+  const formValid = !!(formData.code?.trim() && formData.description?.trim() && formData.category?.trim());
+
+  const RowActions = ({ kad }: { kad: KAD }) => (
+    <div className="flex items-center justify-end gap-1">
+      <Button
+        variant="ghost"
+        size="sm"
+        iconOnly
+        icon="pencil"
+        onClick={() => openEditModal(kad)}
+        aria-label={t('kad.editCode', { code: kad.code })}
+        title={t('common.edit')}
+      />
+      <Button
+        variant="danger-ghost"
+        size="sm"
+        iconOnly
+        icon="trash"
+        onClick={() => setDeleteTarget(kad)}
+        aria-label={t('kad.deleteCode', { code: kad.code })}
+        title={t('common.delete')}
+      />
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-200/60 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800 p-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-                📋 KAD Management
-              </h1>
-              <p className="text-slate-600 dark:text-slate-400 mt-2">
-                Manage Greek Activity Codes (Κωδικοί Αριθμοί Δραστηριότητας)
-              </p>
-            </div>
-            <div className="flex space-x-4">
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
-              >
-                ➕ Add KAD
-              </button>
-              <button
-                onClick={() => setShowBulkUpload(true)}
-                className="px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
-              >
-                📤 Bulk Upload
-              </button>
-            </div>
-          </div>
-
-          {/* Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
-            <div className="md:col-span-2">
-              <div className="flex">
-                <input
-                  type="text"
-                  placeholder="Search KADs..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-l-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  onClick={handleSearch}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-r-xl hover:bg-blue-700"
-                >
-                  🔍
-                </button>
-              </div>
-            </div>
-            
-            <select
-              value={selectedSection}
-              onChange={(e) => setSelectedSection(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+    <div className="space-y-6">
+      <PageHeader
+        title={t('kad.title')}
+        description={t('kad.description')}
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              icon="download"
+              onClick={() => {
+                setModalError(null);
+                setShowBulkUpload(true);
+              }}
             >
-              <option value="">All Sections</option>
-              {sections.map(section => (
-                <option key={section} value={section}>Section {section}</option>
-              ))}
-            </select>
-            
-            <input
-              type="text"
-              placeholder="Category filter..."
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+              {t('kad.bulkUpload')}
+            </Button>
+            <Button
+              variant="primary"
+              icon="plus"
+              onClick={() => {
+                resetForm();
+                setModalError(null);
+                setShowCreateModal(true);
+              }}
+            >
+              {t('kad.add')}
+            </Button>
+          </>
+        }
+      />
+
+      {/* Filters */}
+      <div className="card p-3 sm:p-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))_auto] lg:items-center">
+          <form
+            role="search"
+            className="relative col-span-2 lg:col-span-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSearch();
+            }}
+          >
+            <Icon
+              name="search"
+              size={16}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
             />
-            
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="code">Sort by Code</option>
-              <option value="description">Sort by Description</option>
-              <option value="section">Sort by Section</option>
-              <option value="popular">Sort by Popular</option>
-            </select>
-            
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={showPopularOnly}
-                onChange={(e) => setShowPopularOnly(e.target.checked)}
-                className="rounded"
-              />
-              <span className="text-sm">Popular only</span>
-            </label>
+            <input
+              type="search"
+              placeholder={t('kad.searchList')}
+              aria-label={t('common.search')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input pl-9"
+            />
+          </form>
+
+          <select
+            value={selectedSection}
+            onChange={(e) => setSelectedSection(e.target.value)}
+            className="input"
+            aria-label={t('kad.fields.section')}
+          >
+            <option value="">{t('kad.allSections')}</option>
+            {sections.map((section) => (
+              <option key={section} value={section}>
+                {t('kad.sectionLabel', { section })}
+              </option>
+            ))}
+          </select>
+
+          <input
+            type="text"
+            placeholder={t('kad.categoryFilter')}
+            aria-label={t('kad.fields.category')}
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="input"
+          />
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="input"
+            aria-label={t('kad.sortLabel')}
+          >
+            <option value="code">{t('kad.sort.code')}</option>
+            <option value="description">{t('kad.sort.description')}</option>
+            <option value="section">{t('kad.sort.section')}</option>
+            <option value="popular">{t('kad.sort.popular')}</option>
+          </select>
+
+          <label className="flex h-10 cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-ink-2">
+            <input
+              type="checkbox"
+              checked={showPopularOnly}
+              onChange={(e) => setShowPopularOnly(e.target.checked)}
+              className="checkbox"
+            />
+            {t('kad.popularOnly')}
+          </label>
+        </div>
+      </div>
+
+      {error && (
+        <Alert tone="danger" onDismiss={() => setError(null)} dismissLabel={t('common.dismiss')}>
+          {error}
+        </Alert>
+      )}
+
+      <div className="card overflow-hidden">
+        {loading ? (
+          <div className="divide-y divide-line" aria-busy="true" aria-label={t('common.loading')}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3.5">
+                <div className="skeleton h-4 w-14" />
+                <div className="skeleton h-4 flex-1" />
+                <div className="skeleton hidden h-4 w-24 sm:block" />
+                <div className="skeleton hidden h-4 w-10 sm:block" />
+              </div>
+            ))}
           </div>
-
-          {/* Error display */}
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl mb-6">
-              {error}
-            </div>
-          )}
-
-          {/* Loading */}
-          {loading && (
-            <div className="text-center py-8">
-              <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto"></div>
-              <p className="mt-2 text-slate-600">Loading KADs...</p>
-            </div>
-          )}
-
-          {/* KADs Table */}
-          {!loading && (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse border border-gray-300 rounded-xl">
+        ) : kads.length === 0 ? (
+          <EmptyState
+            icon="list"
+            title={t('kad.emptyTitle')}
+            description={
+              searchQuery || selectedSection || selectedCategory || showPopularOnly
+                ? t('kad.emptyFiltered')
+                : t('kad.emptyDescription')
+            }
+          />
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="table">
                 <thead>
-                  <tr className="bg-gray-50 dark:bg-slate-700">
-                    <th className="border border-gray-300 px-4 py-3 text-left">Code</th>
-                    <th className="border border-gray-300 px-4 py-3 text-left">Description</th>
-                    <th className="border border-gray-300 px-4 py-3 text-left">Section</th>
-                    <th className="border border-gray-300 px-4 py-3 text-left">Category</th>
-                    <th className="border border-gray-300 px-4 py-3 text-left">VAT %</th>
-                    <th className="border border-gray-300 px-4 py-3 text-left">Popular</th>
-                    <th className="border border-gray-300 px-4 py-3 text-left">Actions</th>
+                  <tr>
+                    <th>{t('kad.fields.code')}</th>
+                    <th>{t('kad.fields.description')}</th>
+                    <th className="text-center">{t('kad.fields.section')}</th>
+                    <th>{t('kad.fields.category')}</th>
+                    <th className="text-right">{t('kad.fields.vat')}</th>
+                    <th>
+                      <span className="sr-only">{t('kad.popular')}</span>
+                    </th>
+                    <th>
+                      <span className="sr-only">{t('common.actions')}</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {kads.map((kad) => (
-                    <tr key={kad._id} className="hover:bg-gray-50 dark:hover:bg-slate-700">
-                      <td className="border border-gray-300 px-4 py-3 font-mono">{kad.code}</td>
-                      <td className="border border-gray-300 px-4 py-3">{kad.description}</td>
-                      <td className="border border-gray-300 px-4 py-3 text-center">{kad.section}</td>
-                      <td className="border border-gray-300 px-4 py-3">{kad.category}</td>
-                      <td className="border border-gray-300 px-4 py-3 text-center">{kad.vatRate}%</td>
-                      <td className="border border-gray-300 px-4 py-3 text-center">
-                        {kad.isPopular ? '⭐' : '-'}
+                    <tr key={kad._id} className="hover:bg-sunken/50">
+                      <td className="num whitespace-nowrap font-semibold text-ink">{kad.code}</td>
+                      <td className="min-w-[16rem] text-ink-2">{kad.description}</td>
+                      <td className="text-center text-ink-2">{kad.section}</td>
+                      <td className="text-muted">{kad.category}</td>
+                      <td className="num whitespace-nowrap text-right text-ink-2">{kad.vatRate}%</td>
+                      <td>
+                        {kad.isPopular && (
+                          <span className="badge badge-warning">
+                            <Icon name="star" size={12} />
+                            {t('kad.popular')}
+                          </span>
+                        )}
                       </td>
-                      <td className="border border-gray-300 px-4 py-3">
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => openEditModal(kad)}
-                            className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
-                          >
-                            ✏️ Edit
-                          </button>
-                          <button
-                            onClick={() => deleteKAD(kad.code)}
-                            className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
-                          >
-                            🗑️ Delete
-                          </button>
-                        </div>
+                      <td className="w-px">
+                        <RowActions kad={kad} />
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          )}
 
-          {/* Pagination */}
-          {pagination && (
-            <div className="flex justify-between items-center mt-6">
-              <div className="text-sm text-slate-600">
-                Showing {kads.length} of {pagination.total} KADs (Page {pagination.page} of {pagination.pages})
-              </div>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => setCurrentPage(currentPage - 1)}
-                  disabled={!pagination.hasPrev}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-400"
-                >
-                  ← Previous
-                </button>
-                <button
-                  onClick={() => setCurrentPage(currentPage + 1)}
-                  disabled={!pagination.hasNext}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-400"
-                >
-                  Next →
-                </button>
-              </div>
+            {/* Phone list */}
+            <ul className="divide-y divide-line md:hidden">
+              {kads.map((kad) => (
+                <li key={kad._id} className="flex items-start gap-3 px-4 py-3.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="num text-sm font-semibold text-ink">{kad.code}</span>
+                      <span className="badge badge-neutral py-0 text-2xs">
+                        {t('kad.sectionShort', { section: kad.section })}
+                      </span>
+                      <span className="num text-xs text-muted">{t('kad.vatShort', { rate: kad.vatRate })}</span>
+                      {kad.isPopular && (
+                        <span className="badge badge-warning py-0 text-2xs">
+                          <Icon name="star" size={11} />
+                          {t('kad.popular')}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-ink-2">{kad.description}</p>
+                    {kad.category && <p className="mt-0.5 text-xs text-muted">{kad.category}</p>}
+                  </div>
+                  <RowActions kad={kad} />
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {/* Pagination */}
+        {pagination && !loading && kads.length > 0 && (
+          <div className="flex flex-col gap-3 border-t border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="num text-sm text-muted">
+              {t('kad.pageInfo', {
+                shown: kads.length,
+                total: pagination.total,
+                page: pagination.page,
+                pages: pagination.pages,
+              })}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                icon="chevronLeft"
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={!pagination.hasPrev}
+              >
+                {t('common.previous')}
+              </Button>
+              <Button
+                size="sm"
+                iconRight="chevronRight"
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={!pagination.hasNext}
+              >
+                {t('common.next')}
+              </Button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Create/Edit Modal */}
-      {(showCreateModal || showEditModal) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold mb-6">
-              {showCreateModal ? '➕ Create KAD' : '✏️ Edit KAD'}
-            </h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Code *</label>
-                <input
-                  type="text"
-                  value={formData.code}
-                  onChange={(e) => handleInputChange('code', e.target.value)}
-                  placeholder="00.00"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-2">Section *</label>
-                <select
-                  value={formData.section}
-                  onChange={(e) => handleInputChange('section', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {sections.map(section => (
-                    <option key={section} value={section}>Section {section}</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-2">Description (Greek) *</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => handleInputChange('description', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows={3}
-                />
-              </div>
-              
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-2">Description (English)</label>
-                <textarea
-                  value={formData.descriptionEN}
-                  onChange={(e) => handleInputChange('descriptionEN', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows={3}
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-2">Category *</label>
-                <input
-                  type="text"
-                  value={formData.category}
-                  onChange={(e) => handleInputChange('category', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-2">VAT Rate (%)</label>
-                <input
-                  type="number"
-                  value={formData.vatRate}
-                  onChange={(e) => handleInputChange('vatRate', parseInt(e.target.value))}
-                  min="0"
-                  max="100"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-2">Keywords (comma-separated)</label>
-                <input
-                  type="text"
-                  value={formData.keywords?.join(', ')}
-                  onChange={(e) => handleArrayInput('keywords', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-2">Related Codes (comma-separated)</label>
-                <input
-                  type="text"
-                  value={formData.relatedCodes?.join(', ')}
-                  onChange={(e) => handleArrayInput('relatedCodes', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-2">Notes</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => handleInputChange('notes', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows={2}
-                />
-              </div>
-              
-              <div>
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.isPopular}
-                    onChange={(e) => handleInputChange('isPopular', e.target.checked)}
-                    className="rounded"
-                  />
-                  <span className="text-sm font-medium">Mark as Popular</span>
-                </label>
-              </div>
-            </div>
-            
-            <div className="flex justify-end space-x-4 mt-8">
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setShowEditModal(false);
-                  setSelectedKAD(null);
-                  resetForm();
-                }}
-                className="px-6 py-2 bg-gray-300 text-gray-700 rounded-xl hover:bg-gray-400"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={showCreateModal ? createKAD : updateKAD}
-                className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
-              >
-                {showCreateModal ? 'Create' : 'Update'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={formOpen}
+        onClose={closeFormModal}
+        busy={saving}
+        size="lg"
+        closeLabel={t('common.close')}
+        title={showCreateModal ? t('kad.createTitle') : t('kad.editTitle', { code: selectedKAD?.code || '' })}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeFormModal} disabled={saving}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="primary"
+              loading={saving}
+              disabled={!formValid}
+              onClick={showCreateModal ? createKAD : updateKAD}
+            >
+              {showCreateModal ? t('common.create') : t('common.saveChanges')}
+            </Button>
+          </>
+        }
+      >
+        <form
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!saving && formValid) (showCreateModal ? createKAD : updateKAD)();
+          }}
+        >
+          {modalError && (
+            <Alert tone="danger" className="sm:col-span-2">
+              {modalError}
+            </Alert>
+          )}
+          <Field label={t('kad.fields.code')} required>
+            <input
+              type="text"
+              value={formData.code}
+              onChange={(e) => handleInputChange('code', e.target.value)}
+              placeholder="00.00"
+              className="input num"
+              data-autofocus
+            />
+          </Field>
+
+          <Field label={t('kad.fields.section')} required>
+            <select
+              value={formData.section}
+              onChange={(e) => handleInputChange('section', e.target.value)}
+              className="input"
+            >
+              {sections.map((section) => (
+                <option key={section} value={section}>
+                  {t('kad.sectionLabel', { section })}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label={t('kad.fields.descriptionEl')} required className="sm:col-span-2">
+            <textarea
+              value={formData.description}
+              onChange={(e) => handleInputChange('description', e.target.value)}
+              className="input"
+              rows={3}
+              lang="el"
+            />
+          </Field>
+
+          <Field label={t('kad.fields.descriptionEn')} className="sm:col-span-2">
+            <textarea
+              value={formData.descriptionEN}
+              onChange={(e) => handleInputChange('descriptionEN', e.target.value)}
+              className="input"
+              rows={3}
+              lang="en"
+            />
+          </Field>
+
+          <Field label={t('kad.fields.category')} required>
+            <input
+              type="text"
+              value={formData.category}
+              onChange={(e) => handleInputChange('category', e.target.value)}
+              className="input"
+            />
+          </Field>
+
+          <Field label={t('kad.fields.vatRate')}>
+            <input
+              type="number"
+              value={formData.vatRate}
+              onChange={(e) => handleInputChange('vatRate', parseInt(e.target.value))}
+              min="0"
+              max="100"
+              className="input"
+            />
+          </Field>
+
+          <Field label={t('kad.fields.keywords')} hint={t('kad.commaHint')}>
+            <input
+              type="text"
+              value={formData.keywords?.join(', ')}
+              onChange={(e) => handleArrayInput('keywords', e.target.value)}
+              className="input"
+            />
+          </Field>
+
+          <Field label={t('kad.fields.relatedCodes')} hint={t('kad.commaHint')}>
+            <input
+              type="text"
+              value={formData.relatedCodes?.join(', ')}
+              onChange={(e) => handleArrayInput('relatedCodes', e.target.value)}
+              className="input num"
+            />
+          </Field>
+
+          <Field label={t('kad.fields.notes')} className="sm:col-span-2">
+            <textarea
+              value={formData.notes}
+              onChange={(e) => handleInputChange('notes', e.target.value)}
+              className="input"
+              rows={2}
+            />
+          </Field>
+
+          <label className="flex cursor-pointer items-center gap-2.5 text-sm text-ink-2 sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={formData.isPopular}
+              onChange={(e) => handleInputChange('isPopular', e.target.checked)}
+              className="checkbox"
+            />
+            {t('kad.markPopular')}
+          </label>
+          <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
+        </form>
+      </Modal>
 
       {/* Bulk Upload Modal */}
-      {showBulkUpload && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold mb-6">📤 Bulk Upload KADs</h2>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">
-                JSON Data (Array of KAD objects)
-              </label>
-              <textarea
-                value={bulkData}
-                onChange={(e) => setBulkData(e.target.value)}
-                placeholder={`[
+      <Modal
+        open={showBulkUpload}
+        onClose={closeBulk}
+        busy={saving}
+        size="xl"
+        closeLabel={t('common.close')}
+        title={t('kad.bulkTitle')}
+        description={t('kad.bulkDescription')}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeBulk} disabled={saving}>
+              {t('common.close')}
+            </Button>
+            <Button variant="primary" loading={saving} disabled={!bulkData.trim()} onClick={handleBulkUpload}>
+              {t('kad.uploadAction')}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Alert tone="warning">{t('kad.bulkReplaceWarning')}</Alert>
+          {modalError && <Alert tone="danger">{modalError}</Alert>}
+          <Field label={t('kad.bulkJsonLabel')}>
+            <textarea
+              value={bulkData}
+              onChange={(e) => setBulkData(e.target.value)}
+              placeholder={`[
   {
     "code": "01.01",
     "description": "Καλλιέργεια σιτηρών...",
@@ -576,53 +714,77 @@ const KADManager = () => {
     "keywords": ["γεωργία", "σιτηρά"]
   }
 ]`}
-                className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                rows={15}
-              />
+              className="input font-mono text-[0.8125rem]"
+              rows={14}
+              spellCheck={false}
+            />
+          </Field>
+
+          {uploadResult && (
+            <div className="rounded-md border border-success/25 bg-success-soft p-4 text-sm text-success">
+              <p className="font-semibold">{t('kad.uploadResults')}</p>
+              <dl className="num mt-2 grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-4">
+                <div>
+                  <dt className="text-xs opacity-80">{t('kad.stats.total')}</dt>
+                  <dd className="font-semibold">{uploadResult.stats?.total}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs opacity-80">{t('kad.stats.created')}</dt>
+                  <dd className="font-semibold">{uploadResult.stats?.created}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs opacity-80">{t('kad.stats.updated')}</dt>
+                  <dd className="font-semibold">{uploadResult.stats?.updated}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs opacity-80">{t('kad.stats.errors')}</dt>
+                  <dd className="font-semibold">{uploadResult.stats?.errors}</dd>
+                </div>
+              </dl>
+              {uploadResult.errors?.length > 0 && (
+                <ul className="mt-3 list-inside list-disc space-y-0.5 text-danger">
+                  {uploadResult.errors.map((err: string, index: number) => (
+                    <li key={index} className="text-xs">
+                      {err}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-            
-            {uploadResult && (
-              <div className="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded-xl">
-                <h3 className="font-bold">Upload Results:</h3>
-                <p>Total: {uploadResult.stats.total}</p>
-                <p>Created: {uploadResult.stats.created}</p>
-                <p>Updated: {uploadResult.stats.updated}</p>
-                <p>Errors: {uploadResult.stats.errors}</p>
-                {uploadResult.errors.length > 0 && (
-                  <div className="mt-2">
-                    <p className="font-bold">Errors:</p>
-                    <ul className="list-disc list-inside">
-                      {uploadResult.errors.map((error: string, index: number) => (
-                        <li key={index} className="text-sm">{error}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            <div className="flex justify-end space-x-4">
-              <button
-                onClick={() => {
-                  setShowBulkUpload(false);
-                  setBulkData('');
-                  setUploadResult(null);
-                }}
-                className="px-6 py-2 bg-gray-300 text-gray-700 rounded-xl hover:bg-gray-400"
-              >
-                Close
-              </button>
-              <button
-                onClick={handleBulkUpload}
-                disabled={!bulkData.trim()}
-                className="px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Upload KADs
-              </button>
-            </div>
-          </div>
+          )}
         </div>
-      )}
+      </Modal>
+
+      {/* Delete confirmation */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        busy={saving}
+        size="sm"
+        closeLabel={t('common.close')}
+        title={t('kad.deleteTitle')}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)} disabled={saving}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="danger"
+              icon="trash"
+              loading={saving}
+              onClick={() => deleteTarget && deleteKAD(deleteTarget.code)}
+              data-autofocus
+            >
+              {t('common.delete')}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink-2">{t('kad.deleteConfirm', { code: deleteTarget?.code || '' })}</p>
+        {deleteTarget?.description && (
+          <p className="mt-2 rounded-md bg-sunken px-3 py-2 text-sm text-muted">{deleteTarget.description}</p>
+        )}
+      </Modal>
     </div>
   );
 };

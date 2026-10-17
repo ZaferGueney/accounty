@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
 import { useTranslation } from 'next-i18next';
 import api from '@/utils/api';
+import Icon from '@/components/ui/Icon';
+import Spinner from '@/components/ui/Spinner';
 
 interface KAD {
   _id: string;
@@ -19,36 +21,45 @@ interface KADSelectorProps {
   maxSelections?: number;
   placeholder?: string;
   className?: string;
+  /** Optional id for the search input, so an external <label htmlFor> can point at it. */
+  id?: string;
 }
 
-const KADSelector = ({ 
-  selectedKADs, 
-  onKADsChange, 
+/**
+ * Searchable picker for Greek activity codes (KAD).
+ * Selected codes show as removable chips; the first one is the primary activity.
+ */
+const KADSelector = ({
+  selectedKADs,
+  onKADsChange,
   maxSelections = 5,
-  placeholder = "Search and select activity codes...",
-  className = "" 
+  placeholder,
+  className = '',
+  id,
 }: KADSelectorProps) => {
   const { t } = useTranslation('common');
+  const autoId = useId();
+  const inputId = id || `kad${autoId}`;
+  const listId = `${inputId}-list`;
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<KAD[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const atLimit = selectedKADs.length >= maxSelections;
 
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current && 
-        !dropdownRef.current.contains(event.target as Node) &&
-        searchRef.current &&
-        !searchRef.current.contains(event.target as Node)
-      ) {
+      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
         setIsDropdownOpen(false);
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
@@ -58,23 +69,27 @@ const KADSelector = ({
     const searchKADs = async () => {
       if (searchQuery.length < 2) {
         setSearchResults([]);
+        setSearchError(false);
         return;
       }
 
       setIsLoading(true);
+      setSearchError(false);
       try {
         const response = await api.get(`/api/kads/search/${encodeURIComponent(searchQuery)}?limit=10`);
         if (response.data.success) {
           // Filter out already selected KADs
-          const selectedCodes = selectedKADs.map(kad => kad.code);
+          const selectedCodes = selectedKADs.map((kad) => kad.code);
           const filteredResults = response.data.data.filter(
             (kad: KAD) => !selectedCodes.includes(kad.code)
           );
           setSearchResults(filteredResults);
+          setActiveIndex(filteredResults.length ? 0 : -1);
         }
       } catch (error) {
         console.error('Error searching KADs:', error);
         setSearchResults([]);
+        setSearchError(true);
       } finally {
         setIsLoading(false);
       }
@@ -95,145 +110,159 @@ const KADSelector = ({
       setSearchQuery('');
       setIsDropdownOpen(false);
       setSearchResults([]);
+      setActiveIndex(-1);
+      searchRef.current?.focus();
     }
   };
 
   const handleKADRemove = (kadToRemove: KAD) => {
-    onKADsChange(selectedKADs.filter(kad => kad.code !== kadToRemove.code));
+    onKADsChange(selectedKADs.filter((kad) => kad.code !== kadToRemove.code));
   };
 
   const handleInputFocus = () => {
-    setIsDropdownOpen(searchQuery.length >= 2 && searchResults.length > 0);
+    setIsDropdownOpen(searchQuery.length >= 2);
   };
 
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setIsDropdownOpen(true);
+      setActiveIndex((i) => Math.min(searchResults.length - 1, i + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(0, i - 1));
+    } else if (e.key === 'Enter') {
+      if (isDropdownOpen && activeIndex >= 0 && searchResults[activeIndex]) {
+        e.preventDefault();
+        handleKADSelect(searchResults[activeIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      if (isDropdownOpen) {
+        e.stopPropagation();
+        setIsDropdownOpen(false);
+      }
+    }
+  };
+
+  const showPanel = isDropdownOpen && searchQuery.length >= 2;
+
   return (
-    <div className={`relative ${className}`}>
+    <div ref={wrapRef} className={`relative ${className}`}>
       {/* Selected KADs */}
       {selectedKADs.length > 0 && (
-        <div className="mb-3">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-            Selected Activity Codes:
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {selectedKADs.map((kad) => (
-              <div
-                key={kad.code}
-                className="inline-flex items-center bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-3 py-1 rounded-full text-sm"
+        <ul className="mb-2.5 flex flex-wrap gap-1.5" aria-label={t('kad.selected')}>
+          {selectedKADs.map((kad, index) => (
+            <li
+              key={kad.code}
+              className="inline-flex max-w-full items-center gap-2 rounded-full border border-line-strong bg-surface py-1 pl-3 pr-1 text-[0.8125rem] text-ink-2"
+              title={kad.description}
+            >
+              <span className="num font-semibold text-ink">{kad.code}</span>
+              <span className="max-w-[14rem] truncate sm:max-w-[18rem]">{kad.description}</span>
+              {index === 0 && <span className="badge badge-info py-0 text-2xs">{t('kad.primary')}</span>}
+              <button
+                type="button"
+                onClick={() => handleKADRemove(kad)}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-sunken hover:text-danger"
+                aria-label={t('kad.remove', { code: kad.code })}
               >
-                <span className="font-mono mr-2">{kad.code}</span>
-                <span className="max-w-32 truncate mr-2">{kad.description}</span>
-                <button
-                  type="button"
-                  onClick={() => handleKADRemove(kad)}
-                  className="ml-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-full p-1 transition-colors"
-                  aria-label={`Remove ${kad.code}`}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+                <Icon name="x" size={13} />
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
 
       {/* Search Input */}
       <div className="relative">
+        <Icon
+          name="search"
+          size={16}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+        />
         <input
           ref={searchRef}
+          id={inputId}
           type="text"
+          role="combobox"
+          aria-expanded={showPanel}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={showPanel && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
+          autoComplete="off"
           value={searchQuery}
           onChange={handleSearchChange}
           onFocus={handleInputFocus}
-          placeholder={selectedKADs.length >= maxSelections 
-            ? `Maximum ${maxSelections} codes selected` 
-            : placeholder
-          }
-          disabled={selectedKADs.length >= maxSelections}
-          className={`w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-xl 
-            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-            bg-white dark:bg-slate-700 text-slate-900 dark:text-white
-            ${selectedKADs.length >= maxSelections ? 'opacity-50 cursor-not-allowed' : ''}
-          `}
+          onKeyDown={onKeyDown}
+          placeholder={atLimit ? t('kad.maxReached', { max: maxSelections }) : placeholder || t('kad.searchPlaceholder')}
+          disabled={atLimit}
+          className="input pl-9 pr-9"
         />
-        
-        {/* Loading indicator */}
         {isLoading && (
-          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        )}
-
-        {/* Search icon */}
-        {!isLoading && (
-          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400">
-            🔍
-          </div>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted">
+            <Spinner size={15} />
+          </span>
         )}
       </div>
 
-      {/* Dropdown Results */}
-      {isDropdownOpen && searchResults.length > 0 && (
-        <div
-          ref={dropdownRef}
-          className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-xl shadow-lg max-h-64 overflow-y-auto"
-        >
-          {searchResults.map((kad) => (
-            <button
-              key={kad.code}
-              type="button"
-              onClick={() => handleKADSelect(kad)}
-              className="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-slate-700 border-b border-gray-100 dark:border-slate-700 last:border-b-0 transition-colors"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <span className="font-mono text-sm bg-gray-100 dark:bg-slate-600 px-2 py-1 rounded">
-                      {kad.code}
-                    </span>
-                    <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
-                      {kad.section}
-                    </span>
-                    {kad.isPopular && (
-                      <span className="text-xs">⭐</span>
-                    )}
-                  </div>
-                  <p className="text-sm text-slate-900 dark:text-white font-medium mb-1">
-                    {kad.description}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {kad.category}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      VAT: {kad.vatRate}%
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* No results message */}
-      {isDropdownOpen && searchQuery.length >= 2 && searchResults.length === 0 && !isLoading && (
-        <div
-          ref={dropdownRef}
-          className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-xl shadow-lg p-4 text-center"
-        >
-          <p className="text-slate-500 dark:text-slate-400 text-sm">
-            No activity codes found for "{searchQuery}"
-          </p>
+      {/* Results panel (absolute, above sibling content; parents have no overflow clipping) */}
+      {showPanel && (
+        <div className="popover absolute inset-x-0 top-full z-50 mt-1.5 overflow-hidden">
+          {searchResults.length > 0 ? (
+            <ul id={listId} role="listbox" className="max-h-72 overflow-y-auto p-1">
+              {searchResults.map((kad, index) => {
+                const active = index === activeIndex;
+                return (
+                  <li
+                    key={kad.code}
+                    id={`${listId}-${index}`}
+                    role="option"
+                    aria-selected={active}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleKADSelect(kad);
+                    }}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    className={`cursor-pointer rounded px-3 py-2.5 transition-colors ${active ? 'bg-sunken' : ''}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="num text-sm font-semibold text-ink">{kad.code}</span>
+                      <span className="badge badge-neutral py-0 text-2xs">
+                        {t('kad.sectionShort', { section: kad.section })}
+                      </span>
+                      {kad.isPopular && (
+                        <span className="badge badge-warning py-0 text-2xs">
+                          <Icon name="star" size={11} />
+                          {t('kad.popular')}
+                        </span>
+                      )}
+                      <span className="num ml-auto text-xs text-muted">
+                        {t('kad.vatShort', { rate: kad.vatRate })}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-sm text-ink-2">{kad.description}</p>
+                    {kad.category && <p className="mt-0.5 text-xs text-muted">{kad.category}</p>}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : !isLoading ? (
+            <p id={listId} className="px-4 py-3.5 text-center text-sm text-muted">
+              {searchError ? t('kad.searchFailed') : t('kad.noResults', { query: searchQuery })}
+            </p>
+          ) : (
+            <p id={listId} className="px-4 py-3.5 text-center text-sm text-muted">
+              {t('common.loading')}
+            </p>
+          )}
         </div>
       )}
 
       {/* Helper text */}
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-        You can select up to {maxSelections} activity codes. Type at least 2 characters to search.
+      <p className="hint">
+        {t('kad.helper', { max: maxSelections })}
         {selectedKADs.length > 0 && (
-          <span className="ml-2">
-            ({selectedKADs.length}/{maxSelections} selected)
-          </span>
+          <span className="num ml-1.5">({selectedKADs.length}/{maxSelections})</span>
         )}
       </p>
     </div>
