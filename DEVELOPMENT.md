@@ -484,7 +484,7 @@ SESSION_MAX_AGE=604800000
 ### Testing Credentials
 ```
 Email: your@email.com
-Password: bat8fugi4
+Password: (in the AIDEN vault)
 Role: Admin with Premium subscription
 ```
 

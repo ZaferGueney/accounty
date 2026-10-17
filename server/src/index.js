@@ -23,7 +23,9 @@ const PORT = process.env.PORT || 7842;
 // Database connection
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://dbFyped:bat8fugi4@cluster0.9ire6.mongodb.net/Accounty?retryWrites=true&w=majority');
+    if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is not set');
+    // MONGODB_DB lets a local/test run point at another database on the same cluster
+    const conn = await mongoose.connect(process.env.MONGODB_URI, process.env.MONGODB_DB ? { dbName: process.env.MONGODB_DB } : {});
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     console.error('Database connection error:', error);

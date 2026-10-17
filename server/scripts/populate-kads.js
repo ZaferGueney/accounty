@@ -7,7 +7,7 @@ require('dotenv').config();
 const populateKADs = async () => {
   try {
     // Connect to MongoDB
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://dbFyped:bat8fugi4@cluster0.9ire6.mongodb.net/Accounty?retryWrites=true&w=majority');
+    await mongoose.connect(process.env.MONGODB_URI);
     console.log('Connected to MongoDB');
 
     // Clear existing KADs (optional - remove this line to keep existing data)
