@@ -1,17 +1,31 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'next-i18next';
 import { bankingAPI } from '@/utils/api';
+import Button from '@/components/ui/Button';
+import Alert from '@/components/ui/Alert';
+import Field from '@/components/ui/Field';
+import Modal from '@/components/ui/Modal';
+import EmptyState from '@/components/ui/EmptyState';
+import Icon from '@/components/ui/Icon';
+import { useToast } from '@/components/ui/Toast';
+import { apiErrorText } from '@/components/ui/format';
 
 const BankingSettings = () => {
   const { t } = useTranslation('common');
+  const toast = useToast();
 
-  const [banks, setBanks] = useState([]);
+  const [banks, setBanks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editingBank, setEditingBank] = useState(null);
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [editingBank, setEditingBank] = useState<any>(null);
+  const [formError, setFormError] = useState('');
+  const [listError, setListError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [defaultBusyId, setDefaultBusyId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     accountName: '',
@@ -29,21 +43,17 @@ const BankingSettings = () => {
   const fetchBanks = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const response = await bankingAPI.getBanks();
       if (response.data.success) {
         setBanks(response.data.data);
       }
     } catch (error) {
       console.error('Failed to fetch banks:', error);
-      showMessage('error', 'Failed to load banking information');
+      setLoadError(apiErrorText(error, t('settingsUi.banking.loadFailed')));
     } finally {
       setLoading(false);
     }
-  };
-
-  const showMessage = (type: 'success' | 'error', text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 5000);
   };
 
   const resetForm = () => {
@@ -55,6 +65,14 @@ const BankingSettings = () => {
       notes: '',
       isDefault: false
     });
+  };
+
+  const closeModal = () => {
+    setShowAddModal(false);
+    setShowEditModal(false);
+    setEditingBank(null);
+    setFormError('');
+    resetForm();
   };
 
   const handleInputChange = (field: string, value: string | boolean) => {
@@ -83,68 +101,80 @@ const BankingSettings = () => {
   };
 
   const handleAddBank = async () => {
+    if (saving) return;
     try {
       setSaving(true);
+      setFormError('');
       const response = await bankingAPI.createBank(formData);
       if (response.data.success) {
-        showMessage('success', 'Bank added successfully');
+        toast.success(t('settingsUi.banking.added'));
         fetchBanks();
-        setShowAddModal(false);
-        resetForm();
+        closeModal();
       }
     } catch (error) {
-      showMessage('error', error.response?.data?.message || 'Failed to add bank');
+      setFormError(apiErrorText(error, t('settingsUi.banking.addFailed')));
     } finally {
       setSaving(false);
     }
   };
 
   const handleUpdateBank = async () => {
+    if (saving || !editingBank) return;
     try {
       setSaving(true);
+      setFormError('');
       const response = await bankingAPI.updateBank(editingBank._id, formData);
       if (response.data.success) {
-        showMessage('success', 'Bank updated successfully');
+        toast.success(t('settingsUi.banking.updated'));
         fetchBanks();
-        setShowEditModal(false);
-        setEditingBank(null);
-        resetForm();
+        closeModal();
       }
     } catch (error) {
-      showMessage('error', error.response?.data?.message || 'Failed to update bank');
+      setFormError(apiErrorText(error, t('settingsUi.banking.updateFailed')));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeleteBank = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this bank?')) return;
-
+  const handleDeleteBank = async () => {
+    if (!deleteTarget || deleting) return;
     try {
-      const response = await bankingAPI.deleteBank(id);
+      setDeleting(true);
+      setListError('');
+      const response = await bankingAPI.deleteBank(deleteTarget._id);
       if (response.data.success) {
-        showMessage('success', 'Bank deleted successfully');
+        toast.success(t('settingsUi.banking.deleted'));
+        setDeleteTarget(null);
         fetchBanks();
       }
     } catch (error) {
-      showMessage('error', error.response?.data?.message || 'Failed to delete bank');
+      setDeleteTarget(null);
+      setListError(apiErrorText(error, t('settingsUi.banking.deleteFailed')));
+    } finally {
+      setDeleting(false);
     }
   };
 
   const handleSetDefault = async (id: string) => {
+    if (defaultBusyId) return;
     try {
+      setDefaultBusyId(id);
+      setListError('');
       const response = await bankingAPI.setDefaultBank(id);
       if (response.data.success) {
-        showMessage('success', 'Default bank updated');
+        toast.success(t('settingsUi.banking.defaultUpdated'));
         fetchBanks();
       }
     } catch (error) {
-      showMessage('error', error.response?.data?.message || 'Failed to set default bank');
+      setListError(apiErrorText(error, t('settingsUi.banking.defaultFailed')));
+    } finally {
+      setDefaultBusyId(null);
     }
   };
 
-  const openEditModal = (bank) => {
+  const openEditModal = (bank: any) => {
     setEditingBank(bank);
+    setFormError('');
     setFormData({
       accountName: bank.accountName,
       bankName: bank.bankName,
@@ -160,295 +190,270 @@ const BankingSettings = () => {
     return iban.replace(/(.{4})/g, '$1 ').trim();
   };
 
+  const openAdd = () => {
+    resetForm();
+    setFormError('');
+    setShowAddModal(true);
+  };
+
+  const ibanValid = formData.iban ? validateGreekIBAN(formData.iban) : null;
+  const canSubmit = !!formData.bankName && !!formData.accountName && validateGreekIBAN(formData.iban);
+
   return (
-    <div className="max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="mb-8 flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700 dark:from-white dark:via-slate-100 dark:to-slate-200 bg-clip-text text-transparent mb-2">
-            Banking Settings
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400">
-            Manage your bank accounts for invoicing
-          </p>
+          <h2 className="text-lg font-semibold text-ink">{t('settingsUi.banking.title')}</h2>
+          <p className="section-desc">{t('settingsUi.banking.description')}</p>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setShowAddModal(true);
-          }}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40"
-        >
-          + Add Bank
-        </button>
+        {banks.length > 0 && (
+          <Button variant="primary" icon="plus" onClick={openAdd}>
+            {t('settingsUi.banking.addBank')}
+          </Button>
+        )}
       </div>
 
-      {/* Message */}
-      {message && (
-        <div className={`mb-6 p-4 rounded-xl border ${
-          message.type === 'success'
-            ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300'
-            : 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
-        }`}>
-          {message.text}
-        </div>
+      {listError && (
+        <Alert tone="danger" onDismiss={() => setListError('')} dismissLabel={t('common.dismiss')}>
+          {listError}
+        </Alert>
       )}
 
-      {/* Banks List */}
       {loading ? (
-        <div className="text-center py-12 text-slate-600 dark:text-slate-400">
-          Loading banks...
-        </div>
-      ) : banks.length === 0 ? (
-        <div className="text-center py-12">
-          <div className="text-6xl mb-4">🏦</div>
-          <p className="text-slate-600 dark:text-slate-400 mb-4">
-            No bank accounts yet
-          </p>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors"
-          >
-            Add Your First Bank
-          </button>
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {banks.map(bank => (
-            <div
-              key={bank._id}
-              className="relative bg-gray-100/70 dark:bg-slate-800/80 backdrop-blur-2xl border border-gray-300/40 dark:border-slate-700/50 rounded-2xl shadow-xl p-6"
-            >
-              {bank.isDefault && (
-                <div className="absolute top-4 right-4">
-                  <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-medium rounded-full">
-                    Default
-                  </span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Bank Name</div>
-                  <div className="font-semibold text-slate-900 dark:text-white">{bank.bankName}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Account Holder</div>
-                  <div className="text-slate-900 dark:text-white">{bank.accountName}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">IBAN</div>
-                  <div className="font-mono text-sm text-slate-900 dark:text-white">{formatIBAN(bank.iban)}</div>
-                </div>
-                {bank.swift && (
-                  <div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">SWIFT/BIC</div>
-                    <div className="font-mono text-sm text-slate-900 dark:text-white">{bank.swift}</div>
-                  </div>
-                )}
-              </div>
-
-              {bank.notes && (
-                <div className="mb-4">
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Notes</div>
-                  <div className="text-sm text-slate-600 dark:text-slate-300">{bank.notes}</div>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                {!bank.isDefault && (
-                  <button
-                    onClick={() => handleSetDefault(bank._id)}
-                    className="px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 rounded-lg transition-colors"
-                  >
-                    Set as Default
-                  </button>
-                )}
-                <button
-                  onClick={() => openEditModal(bank)}
-                  className="px-3 py-1.5 text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDeleteBank(bank._id)}
-                  className="px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 rounded-lg transition-colors"
-                >
-                  Delete
-                </button>
-              </div>
+        <div className="space-y-3" aria-busy="true">
+          {[0, 1].map(i => (
+            <div key={i} className="card card-pad space-y-3">
+              <div className="skeleton h-5 w-48" />
+              <div className="skeleton h-4 w-72" />
+              <div className="skeleton h-4 w-40" />
             </div>
           ))}
         </div>
-      )}
-
-      {/* Add/Edit Bank Modal */}
-      {(showAddModal || showEditModal) && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:p-0">
-            <div
-              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-              onClick={() => {
-                setShowAddModal(false);
-                setShowEditModal(false);
-                setEditingBank(null);
-                resetForm();
-              }}
-            ></div>
-
-            <div className="relative inline-block align-bottom bg-white dark:bg-slate-800 rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-              <div className="bg-white dark:bg-slate-800 px-6 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-                    {showAddModal ? 'Add Bank Account' : 'Edit Bank Account'}
-                  </h3>
-                  <button
-                    onClick={() => {
-                      setShowAddModal(false);
-                      setShowEditModal(false);
-                      setEditingBank(null);
-                      resetForm();
-                    }}
-                    className="bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg p-2 transition-colors"
-                  >
-                    <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Bank Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.bankName}
-                      onChange={(e) => handleInputChange('bankName', e.target.value)}
-                      placeholder="e.g., National Bank of Greece"
-                      className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-xl text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50 transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Account Holder Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.accountName}
-                      onChange={(e) => handleInputChange('accountName', e.target.value)}
-                      placeholder="Account holder name"
-                      className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-xl text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50 transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Greek IBAN *
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={formData.iban}
-                        onChange={(e) => handleIBANChange(e.target.value)}
-                        className={`w-full px-4 py-3 bg-gray-50 dark:bg-slate-700 border ${
-                          formData.iban && !validateGreekIBAN(formData.iban)
-                            ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
-                            : formData.iban && validateGreekIBAN(formData.iban)
-                            ? 'border-green-500 focus:border-green-500 focus:ring-green-500/20'
-                            : 'border-gray-300 dark:border-slate-600 focus:border-blue-500/50 focus:ring-blue-500/20'
-                        } rounded-xl text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 transition-all`}
-                        placeholder="GR1601101250000000012300695"
-                        maxLength={27}
-                      />
-                      {formData.iban && (
-                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                          {validateGreekIBAN(formData.iban) ? (
-                            <span className="text-green-500">✓</span>
-                          ) : (
-                            <span className="text-red-500">✗</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    {formData.iban && !validateGreekIBAN(formData.iban) && (
-                      <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                        IBAN must be in format GR + 25 digits (27 characters total)
-                      </p>
+      ) : loadError ? (
+        <div className="card">
+          <EmptyState
+            icon="alertCircle"
+            title={t('settingsUi.banking.loadFailed')}
+            description={loadError}
+            action={
+              <Button variant="secondary" icon="refresh" onClick={fetchBanks}>
+                {t('common.retry')}
+              </Button>
+            }
+          />
+        </div>
+      ) : banks.length === 0 ? (
+        <div className="card">
+          <EmptyState
+            icon="bank"
+            title={t('settingsUi.banking.emptyTitle')}
+            description={t('settingsUi.banking.emptyDescription')}
+            action={
+              <Button variant="primary" icon="plus" onClick={openAdd}>
+                {t('settingsUi.banking.addFirst')}
+              </Button>
+            }
+          />
+        </div>
+      ) : (
+        <ul className="card divide-y divide-line">
+          {banks.map(bank => (
+            <li key={bank._id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
+              <div className="flex min-w-0 gap-3.5">
+                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-sunken text-muted">
+                  <Icon name="bank" size={18} />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold text-ink">{bank.bankName}</p>
+                    {bank.isDefault && (
+                      <span className="badge badge-success">{t('settingsUi.banking.default')}</span>
                     )}
                   </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      SWIFT/BIC Code
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.swift}
-                      onChange={(e) => handleInputChange('swift', e.target.value.toUpperCase())}
-                      placeholder="ETHNGRAA"
-                      className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-xl text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50 transition-all"
-                    />
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Usually 8 or 11 characters (optional for domestic transfers)
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Notes (Optional)
-                    </label>
-                    <textarea
-                      value={formData.notes}
-                      onChange={(e) => handleInputChange('notes', e.target.value)}
-                      placeholder="Add any notes about this account..."
-                      rows={2}
-                      className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-xl text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50 transition-all"
-                    />
-                  </div>
-
-                  {banks.length === 0 && (
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={formData.isDefault}
-                        onChange={(e) => handleInputChange('isDefault', e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      />
-                      <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                        Set as default bank
-                      </label>
+                  <p className="text-sm text-ink-2">{bank.accountName}</p>
+                  <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_auto] sm:justify-start">
+                    <div className="flex gap-2">
+                      <dt className="text-muted">{t('iban')}</dt>
+                      <dd className="num break-all text-ink">{formatIBAN(bank.iban)}</dd>
                     </div>
-                  )}
+                    {bank.swift && (
+                      <div className="flex gap-2">
+                        <dt className="text-muted">{t('swift')}</dt>
+                        <dd className="num text-ink">{bank.swift}</dd>
+                      </div>
+                    )}
+                  </dl>
+                  {bank.notes && <p className="mt-2 text-sm text-muted">{bank.notes}</p>}
                 </div>
               </div>
-
-              <div className="bg-gray-50 dark:bg-slate-700/50 px-6 py-4 sm:flex sm:flex-row-reverse gap-3">
-                <button
-                  onClick={showAddModal ? handleAddBank : handleUpdateBank}
-                  disabled={saving || !formData.bankName || !formData.accountName || !validateGreekIBAN(formData.iban)}
-                  className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {saving ? 'Saving...' : showAddModal ? 'Add Bank' : 'Update Bank'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowAddModal(false);
-                    setShowEditModal(false);
-                    setEditingBank(null);
-                    resetForm();
-                  }}
-                  className="w-full sm:w-auto px-6 py-3 bg-gray-200 dark:bg-slate-600 hover:bg-gray-300 dark:hover:bg-slate-500 text-gray-900 dark:text-white rounded-xl transition-colors"
-                >
-                  Cancel
-                </button>
+              <div className="flex shrink-0 flex-wrap gap-1.5 sm:justify-end">
+                {!bank.isDefault && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={defaultBusyId === bank._id}
+                    disabled={!!defaultBusyId && defaultBusyId !== bank._id}
+                    onClick={() => handleSetDefault(bank._id)}
+                  >
+                    {t('settingsUi.banking.setDefault')}
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" icon="pencil" onClick={() => openEditModal(bank)}>
+                  {t('common.edit')}
+                </Button>
+                <Button size="sm" variant="danger-ghost" icon="trash" onClick={() => setDeleteTarget(bank)}>
+                  {t('common.delete')}
+                </Button>
               </div>
-            </div>
-          </div>
-        </div>
+            </li>
+          ))}
+        </ul>
       )}
+
+      {/* Add / edit */}
+      <Modal
+        open={showAddModal || showEditModal}
+        onClose={closeModal}
+        busy={saving}
+        closeLabel={t('common.close')}
+        title={showAddModal ? t('settingsUi.banking.addTitle') : t('settingsUi.banking.editTitle')}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeModal} disabled={saving}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="primary"
+              loading={saving}
+              disabled={!canSubmit}
+              onClick={showAddModal ? handleAddBank : handleUpdateBank}
+            >
+              {saving
+                ? t('common.saving')
+                : showAddModal
+                ? t('settingsUi.banking.addBank')
+                : t('settingsUi.banking.updateBank')}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {formError && (
+            <Alert tone="danger" onDismiss={() => setFormError('')} dismissLabel={t('common.dismiss')}>
+              {formError}
+            </Alert>
+          )}
+          <Field label={t('bankName')} required>
+            <input
+              type="text"
+              className="input"
+              data-autofocus
+              value={formData.bankName}
+              onChange={(e) => handleInputChange('bankName', e.target.value)}
+              placeholder={t('settingsUi.banking.bankNamePlaceholder')}
+            />
+          </Field>
+          <Field label={t('settingsUi.banking.accountHolder')} required>
+            <input
+              type="text"
+              className="input"
+              value={formData.accountName}
+              onChange={(e) => handleInputChange('accountName', e.target.value)}
+              placeholder={t('placeholders.accountHolderName')}
+            />
+          </Field>
+          <div>
+            <label htmlFor="bank-iban" className="label">
+              {t('settingsUi.banking.greekIban')}
+              <span className="ml-0.5 text-danger" aria-hidden="true">*</span>
+            </label>
+            <div className="relative">
+              <input
+                id="bank-iban"
+                type="text"
+                className={`input num pr-9 ${ibanValid === true ? 'border-success' : ''}`}
+                aria-invalid={ibanValid === false ? true : undefined}
+                aria-describedby="bank-iban-msg"
+                value={formData.iban}
+                onChange={(e) => handleIBANChange(e.target.value)}
+                placeholder={t('placeholders.ibanFormat')}
+                maxLength={27}
+              />
+              {ibanValid !== null && (
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                  <Icon
+                    name={ibanValid ? 'checkCircle' : 'alertCircle'}
+                    size={16}
+                    className={ibanValid ? 'text-success' : 'text-danger'}
+                  />
+                </span>
+              )}
+            </div>
+            {ibanValid === false ? (
+              <p id="bank-iban-msg" className="field-error">{t('settingsUi.banking.ibanFormat')}</p>
+            ) : (
+              <p id="bank-iban-msg" className="hint">{t('settingsUi.banking.ibanHint')}</p>
+            )}
+          </div>
+          <Field label={t('settingsUi.banking.swiftLabel')} hint={t('settingsUi.banking.swiftHint')}>
+            <input
+              type="text"
+              className="input num"
+              value={formData.swift}
+              onChange={(e) => handleInputChange('swift', e.target.value.toUpperCase())}
+              placeholder={t('placeholders.swiftCode')}
+            />
+          </Field>
+          <Field label={t('settingsUi.banking.notes')} optionalLabel={t('common.optional')}>
+            <textarea
+              className="input"
+              rows={2}
+              value={formData.notes}
+              onChange={(e) => handleInputChange('notes', e.target.value)}
+              placeholder={t('settingsUi.banking.notesPlaceholder')}
+            />
+          </Field>
+          {banks.length === 0 && (
+            <label htmlFor="bank-default" className="flex cursor-pointer items-center gap-3">
+              <input
+                id="bank-default"
+                type="checkbox"
+                className="checkbox"
+                checked={formData.isDefault}
+                onChange={(e) => handleInputChange('isDefault', e.target.checked)}
+              />
+              <span className="text-sm text-ink">{t('settingsUi.banking.setAsDefault')}</span>
+            </label>
+          )}
+        </div>
+      </Modal>
+
+      {/* Delete confirm */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        busy={deleting}
+        size="sm"
+        closeLabel={t('common.close')}
+        title={t('settingsUi.banking.deleteTitle')}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="danger" icon="trash" loading={deleting} onClick={handleDeleteBank}>
+              {t('common.delete')}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink-2">
+          {t('settingsUi.banking.deleteConfirm', { name: deleteTarget?.bankName || '' })}
+        </p>
+        {deleteTarget?.iban && (
+          <p className="num mt-2 text-sm text-muted">{formatIBAN(deleteTarget.iban)}</p>
+        )}
+      </Modal>
     </div>
   );
 };
