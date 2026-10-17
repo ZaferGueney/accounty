@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { authAPI } from '@/utils/api';
 
 interface User {
@@ -39,6 +39,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+type HttpError = { message?: string; response?: { status?: number } };
+const httpStatus = (error: unknown) => (error as HttpError)?.response?.status;
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
@@ -55,7 +58,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
+  // Refs, not state: the interval callback must see the current values. (With
+  // state it captured user === null from the first render, so it stopped
+  // itself after 10 minutes and the proactive refresh never ran.)
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const userRef = useRef<User | null>(null);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   // Initialize auth state - check if user is authenticated
   useEffect(() => {
@@ -63,20 +74,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       try {
         // Try to get current user info using cookies
         const response = await authAPI.me();
-        
+
         if (response.data.success && response.data.user) {
+          userRef.current = response.data.user;
           setUser(response.data.user);
           setToken(response.data.token || 'cookie-auth'); // Set placeholder token
-          
+
           // Start token refresh if user is actually authenticated
           startTokenRefresh();
         }
       } catch (error) {
-        // Auth check failed - user not authenticated
-        // Clear any remaining localStorage data
-        localStorage.removeItem('accounty_token');
-        localStorage.removeItem('accounty_user');
-        // Make sure no refresh interval is running
+        // Only a definite "not logged in" clears the stored session. A server
+        // that is still starting or unreachable must not log the user out.
+        const status = httpStatus(error);
+        if (status === 401 || status === 403) {
+          localStorage.removeItem('accounty_token');
+          localStorage.removeItem('accounty_user');
+        } else {
+          console.warn('Could not verify the session:', (error as HttpError)?.message);
+        }
         stopTokenRefresh();
       } finally {
         // Always set loading to false, regardless of success or failure
@@ -85,61 +101,48 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     initAuth();
+    return () => stopTokenRefresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Proactive token refresh - refresh every 10 minutes (access tokens expire in 15 minutes)
+  // Proactive token refresh - every 10 minutes
   const startTokenRefresh = () => {
-    // Clear any existing interval
-    if (refreshInterval) {
-      clearInterval(refreshInterval);
-    }
-    
-    console.log('Starting token refresh interval (will run every 10 minutes)');
-    
-    const interval = setInterval(async () => {
+    stopTokenRefresh();
+
+    refreshIntervalRef.current = setInterval(async () => {
       // Only refresh if we still have a user (prevents unnecessary calls)
-      if (!user) {
-        console.log('No user found, stopping token refresh');
+      if (!userRef.current) {
         stopTokenRefresh();
         return;
       }
-      
+
       try {
-        console.log('Attempting proactive token refresh...');
         await authAPI.refresh();
-        console.log('Token refreshed successfully');
       } catch (error) {
-        console.error('Proactive token refresh failed:', error);
-        // Only redirect if we're not already on the login page
-        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        const status = httpStatus(error);
+        // Network blips are retried on the next tick; only a rejected
+        // refresh token ends the session.
+        if ((status === 401 || status === 403) && typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          userRef.current = null;
           setUser(null);
           setToken(null);
           localStorage.removeItem('accounty_token');
           localStorage.removeItem('accounty_user');
           stopTokenRefresh();
           window.location.href = '/login';
+        } else {
+          console.warn('Proactive token refresh failed:', (error as HttpError)?.message);
         }
       }
     }, 10 * 60 * 1000); // 10 minutes
-
-    setRefreshInterval(interval);
   };
 
   const stopTokenRefresh = () => {
-    if (refreshInterval) {
-      clearInterval(refreshInterval);
-      setRefreshInterval(null);
+    if (refreshIntervalRef.current) {
+      clearInterval(refreshIntervalRef.current);
+      refreshIntervalRef.current = null;
     }
   };
-
-  // Clear interval on unmount
-  useEffect(() => {
-    return () => {
-      if (refreshInterval) {
-        clearInterval(refreshInterval);
-      }
-    };
-  }, [refreshInterval]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -151,6 +154,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const { accessToken, user: newUser } = response.data;
         
         setToken(accessToken || 'cookie-auth');
+        userRef.current = newUser;
         setUser(newUser);
         
         // Store token as fallback for API compatibility
@@ -179,6 +183,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const { accessToken, user: newUser } = response.data;
         
         setToken(accessToken || 'cookie-auth');
+        userRef.current = newUser;
         setUser(newUser);
         
         // Store token as fallback for API compatibility
@@ -207,6 +212,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.error('Logout error:', error);
     } finally {
       // Clear local state regardless of server response
+      userRef.current = null;
       setUser(null);
       setToken(null);
       localStorage.removeItem('accounty_token');
