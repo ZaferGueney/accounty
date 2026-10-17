@@ -29,6 +29,12 @@ class PDFService {
         this.defaultLogoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
         return this.defaultLogoBase64;
       }
+      // Tracked fallback (public/ is gitignored, so Render never had logo.png)
+      const svgPath = path.join(__dirname, '../templates/logo.svg');
+      if (fsSync.existsSync(svgPath)) {
+        this.defaultLogoBase64 = `data:image/svg+xml;base64,${fsSync.readFileSync(svgPath).toString('base64')}`;
+        return this.defaultLogoBase64;
+      }
     } catch (error) {
       console.error('Error loading default logo:', error);
     }
