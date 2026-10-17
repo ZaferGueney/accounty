@@ -1,5 +1,5 @@
 {
-  "welcome": "Welcome to Accounty",
+  "welcome": "Welcome to BillMou",
   "description": "Minimalistic invoicing for Greece",
   "serverStatus": "Server Status",
   "language": "Language",
@@ -9,7 +9,7 @@
   "running": "Running",
   "disconnected": "Disconnected",
   "welcomeBack": "Welcome Back",
-  "signInToYourDashboard": "Sign in to your Accounty dashboard",
+  "signInToYourDashboard": "Sign in to your BillMou dashboard",
   "emailAddress": "Email Address",
   "password": "Password",
   "signIn": "Sign In",
@@ -17,7 +17,7 @@
   "dontHaveAccount": "Don't have an account?",
   "signUp": "Sign up",
   "welcomeToYourDashboard": "Welcome to Your Dashboard",
-  "youAreLoggedIn": "you're successfully logged in to Accounty",
+  "youAreLoggedIn": "you're successfully logged in to BillMou",
   "profileInformation": "Profile Information",
   "subscription": "Subscription",
   "preferences": "Preferences",
@@ -297,11 +297,11 @@
   "home": {
     "headline": "Invoicing for Greece, without the paperwork.",
     "lead": "Issue invoices and receipts, send them to AADE myDATA and keep your customers in one calm place.",
-    "cta": "Sign in to Accounty",
+    "cta": "Sign in to BillMou",
     "createAccount": "Create an account",
     "openDashboard": "Go to dashboard",
     "checking": "Checking…",
-    "factsHeading": "What Accounty does",
+    "factsHeading": "What BillMou does",
     "facts": {
       "invoicesTitle": "Invoices and receipts",
       "invoicesText": "Service and sales invoices, credit notes and receipts with automatic numbering, VAT and a PDF preview.",
@@ -371,7 +371,7 @@
       "passwordSaved": "Password changed",
       "passwordFailed": "Couldn't change your password",
       "typeTitle": "Account type",
-      "typeDescription": "How you use Accounty",
+      "typeDescription": "How you use BillMou",
       "typeSave": "Update account type",
       "typeSaved": "Account type updated",
       "typeFailed": "Couldn't update the account type",
@@ -494,7 +494,7 @@
     },
     "preferences": {
       "title": "Preferences",
-      "description": "How Accounty looks and behaves for you",
+      "description": "How BillMou looks and behaves for you",
       "emptyTitle": "More preferences are on the way",
       "emptyDescription": "Language and theme are in the top bar. Notification options will appear here."
     },
@@ -671,7 +671,7 @@
   },
   "errors": {
     "loadFailedTitle": "Couldn't load your data",
-    "serverUnreachable": "The Accounty server didn't respond. Check your connection and try again.",
+    "serverUnreachable": "The BillMou server didn't respond. Check your connection and try again.",
     "generic": "Something went wrong. Please try again."
   },
   "statuses": {

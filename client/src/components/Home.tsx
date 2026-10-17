@@ -43,7 +43,7 @@ const Home = () => {
     <div className="flex min-h-[100dvh] flex-col bg-canvas">
       <header className="border-b border-line">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="mr-auto rounded-md" aria-label="Accounty">
+          <Link href="/" className="mr-auto rounded-md" aria-label="BillMou">
             <Brand />
           </Link>
           <LanguageSwitcher />

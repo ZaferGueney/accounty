@@ -1,5 +1,5 @@
 {
-  "welcome": "Willkommen bei Accounty",
+  "welcome": "Willkommen bei BillMou",
   "description": "Minimalistische Rechnungsstellung für Griechenland",
   "serverStatus": "Server Status",
   "language": "Sprache",
@@ -9,7 +9,7 @@
   "running": "Läuft",
   "disconnected": "Getrennt",
   "welcomeBack": "Willkommen zurück",
-  "signInToYourDashboard": "Melden Sie sich bei Ihrem Accounty-Dashboard an",
+  "signInToYourDashboard": "Melden Sie sich bei Ihrem BillMou-Dashboard an",
   "emailAddress": "E-Mail-Adresse",
   "password": "Passwort",
   "signIn": "Anmelden",
@@ -17,7 +17,7 @@
   "dontHaveAccount": "Haben Sie noch kein Konto?",
   "signUp": "Registrieren",
   "welcomeToYourDashboard": "Willkommen zu Ihrem Dashboard",
-  "youAreLoggedIn": "Sie sind erfolgreich bei Accounty angemeldet",
+  "youAreLoggedIn": "Sie sind erfolgreich bei BillMou angemeldet",
   "profileInformation": "Profil-Informationen",
   "subscription": "Abonnement",
   "preferences": "Einstellungen",
@@ -297,11 +297,11 @@
   "home": {
     "headline": "Rechnungen für Griechenland, ohne Papierkram.",
     "lead": "Rechnungen und Belege ausstellen, an AADE myDATA übermitteln und Ihre Kunden an einem ruhigen Ort verwalten.",
-    "cta": "Bei Accounty anmelden",
+    "cta": "Bei BillMou anmelden",
     "createAccount": "Konto erstellen",
     "openDashboard": "Zum Dashboard",
     "checking": "Wird geprüft…",
-    "factsHeading": "Was Accounty kann",
+    "factsHeading": "Was BillMou kann",
     "facts": {
       "invoicesTitle": "Rechnungen und Belege",
       "invoicesText": "Dienstleistungs- und Verkaufsrechnungen, Gutschriften und Belege mit automatischer Nummerierung, MwSt. und PDF-Vorschau.",
@@ -371,7 +371,7 @@
       "passwordSaved": "Passwort geändert",
       "passwordFailed": "Passwort konnte nicht geändert werden",
       "typeTitle": "Kontotyp",
-      "typeDescription": "Wie Sie Accounty nutzen",
+      "typeDescription": "Wie Sie BillMou nutzen",
       "typeSave": "Kontotyp aktualisieren",
       "typeSaved": "Kontotyp aktualisiert",
       "typeFailed": "Kontotyp konnte nicht aktualisiert werden",
@@ -494,7 +494,7 @@
     },
     "preferences": {
       "title": "Einstellungen",
-      "description": "Wie Accounty für Sie aussieht und funktioniert",
+      "description": "Wie BillMou für Sie aussieht und funktioniert",
       "emptyTitle": "Weitere Einstellungen folgen",
       "emptyDescription": "Sprache und Design finden Sie in der oberen Leiste. Benachrichtigungen folgen hier."
     },
@@ -671,7 +671,7 @@
   },
   "errors": {
     "loadFailedTitle": "Daten konnten nicht geladen werden",
-    "serverUnreachable": "Der Accounty-Server antwortet nicht. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+    "serverUnreachable": "Der BillMou-Server antwortet nicht. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
     "generic": "Etwas ist schiefgelaufen. Bitte erneut versuchen."
   },
   "statuses": {

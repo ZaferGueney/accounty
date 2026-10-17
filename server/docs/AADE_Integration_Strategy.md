@@ -1,7 +1,7 @@
 # AADE myDATA Integration Strategy
 
 ## Implementation Overview
-This document outlines the complete strategy for integrating the Accounty platform with the Greek AADE myDATA system for legal invoice submission and compliance.
+This document outlines the complete strategy for integrating the BillMou platform with the Greek AADE myDATA system for legal invoice submission and compliance.
 
 ## Architecture Components
 

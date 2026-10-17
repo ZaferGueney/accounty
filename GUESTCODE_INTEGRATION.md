@@ -1,25 +1,25 @@
-# GuestCode Integration with Accounty
+# GuestCode Integration with BillMou
 
-This document describes how to integrate GuestCode with the Accounty Receipt API for AADE myDATA compliance.
+This document describes how to integrate GuestCode with the BillMou Receipt API for AADE myDATA compliance.
 
 ## Overview
 
-When a customer purchases a ticket on GuestCode, you need to create a receipt in Accounty for Greek tax compliance. The receipt is automatically submitted to AADE and you receive a MARK number and QR code to include in the ticket email.
+When a customer purchases a ticket on GuestCode, you need to create a receipt in BillMou for Greek tax compliance. The receipt is automatically submitted to AADE and you receive a MARK number and QR code to include in the ticket email.
 
 ## Setup
 
-### 1. Configure Accounty
+### 1. Configure BillMou
 
-Add the GuestCode API key to Accounty's `.env` file.
+Add the GuestCode API key to BillMou's `.env` file.
 
 **IMPORTANT:** The format is `GUESTCODE_API_KEY=secretkey:userId` - both parts are required!
 
 ```bash
-# Accounty server/.env
+# BillMou server/.env
 
 # GuestCode API Key - Format: secretkey:userId
 # - secretkey: The key that GuestCode sends in X-API-Key header
-# - userId: Your Accounty MongoDB user ID (find in users collection)
+# - userId: Your BillMou MongoDB user ID (find in users collection)
 GUESTCODE_API_KEY=a7f3c9d2e8b1f4a6c3d9e2b5f8a1c4d7:690be3db53cb0144e79179d3
 ```
 
@@ -28,7 +28,7 @@ GUESTCODE_API_KEY=a7f3c9d2e8b1f4a6c3d9e2b5f8a1c4d7:690be3db53cb0144e79179d3
 require('crypto').randomBytes(32).toString('hex')
 ```
 
-**Find your userId:** Check the `_id` field in your Accounty user document in MongoDB.
+**Find your userId:** Check the `_id` field in your BillMou user document in MongoDB.
 
 ### 2. Configure GuestCode
 
@@ -37,7 +37,7 @@ Add these to GuestCode's `.env`:
 ```bash
 # GuestCode server/.env
 
-# Accounty API for AADE receipts
+# BillMou API for AADE receipts
 # Local development:
 ACCOUNTY_API_URL=http://localhost:7842/api
 ACCOUNTY_API_KEY=a7f3c9d2e8b1f4a6c3d9e2b5f8a1c4d7
@@ -47,7 +47,7 @@ ACCOUNTY_API_KEY=a7f3c9d2e8b1f4a6c3d9e2b5f8a1c4d7
 # ACCOUNTY_API_KEY=a7f3c9d2e8b1f4a6c3d9e2b5f8a1c4d7
 ```
 
-**Note:** GuestCode only sends the `secretkey` part (before the colon). Accounty uses the `:userId` part to identify which account to create receipts under.
+**Note:** GuestCode only sends the `secretkey` part (before the colon). BillMou uses the `:userId` part to identify which account to create receipts under.
 
 ## API Endpoints
 
@@ -55,7 +55,7 @@ ACCOUNTY_API_KEY=a7f3c9d2e8b1f4a6c3d9e2b5f8a1c4d7
 
 **POST** `/api/external/receipts`
 
-Creates a receipt in Accounty and submits it to AADE.
+Creates a receipt in BillMou and submits it to AADE.
 
 **Headers:**
 ```
@@ -231,7 +231,7 @@ Just include the QR code image in the email body. Customer can scan to verify wi
 
 ### Option B: Attach Full PDF Receipt (Complete)
 
-Download the PDF from Accounty and attach it to the email. This gives the customer a proper receipt document.
+Download the PDF from BillMou and attach it to the email. This gives the customer a proper receipt document.
 
 ```javascript
 // After creating receipt, download PDF
@@ -263,7 +263,7 @@ await sendEmail({
 
 const createReceipt = async (order, event) => {
   try {
-    // Map GuestCode order to Accounty format
+    // Map GuestCode order to BillMou format
     const receiptData = {
       customer: {
         email: order.email,
@@ -294,7 +294,7 @@ const createReceipt = async (order, event) => {
       orderId: order._id.toString()
     };
 
-    // Call Accounty API
+    // Call BillMou API
     const response = await fetch(`${process.env.ACCOUNTY_API_URL}/external/receipts`, {
       method: 'POST',
       headers: {
@@ -330,7 +330,7 @@ const createReceipt = async (order, event) => {
       return null;
     }
   } catch (error) {
-    console.error('Accounty API error:', error);
+    console.error('BillMou API error:', error);
     return null;
   }
 };
@@ -389,13 +389,13 @@ const result = await createReceipt(order, event);
 
 ### AADE Errors
 
-Even if the receipt is created in Accounty, AADE submission might fail. Check the `status` field:
+Even if the receipt is created in BillMou, AADE submission might fail. Check the `status` field:
 
 - `transmitted` - Successfully submitted to AADE
 - `failed` - AADE rejected the receipt (check `errors` array)
 - `pending` - Not yet submitted (credentials issue)
 
-When status is `failed`, the receipt still exists in Accounty and can be retried manually.
+When status is `failed`, the receipt still exists in BillMou and can be retried manually.
 
 ## Testing
 
@@ -613,7 +613,7 @@ const processPayout = async (hostId, amount) => {
     period: 'January 2025'
   });
 
-  // Create commission invoice in Accounty
+  // Create commission invoice in BillMou
   await createCommissionInvoice(host, payout);
 
   // Process Stripe payout
@@ -642,6 +642,6 @@ This amount becomes the `unitPrice` in the commission invoice.
 ## Support
 
 For issues with:
-- Accounty API: Check server logs in Accounty
+- BillMou API: Check server logs in BillMou
 - AADE errors: Review error codes in response
 - Integration: Contact LBNSWRK E.E.

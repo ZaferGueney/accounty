@@ -164,7 +164,7 @@ const describeTransportError = (error) => {
       ? 'The server is taking too long to answer. Please try again.'
       : 'The server is taking longer than expected. Your change may still have been saved - refresh before trying again.';
   } else {
-    error.message = 'Cannot reach the Accounty server. Check your connection (or that the server is running) and try again.';
+    error.message = 'Cannot reach the BillMou server. Check your connection (or that the server is running) and try again.';
   }
 };
 

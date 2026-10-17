@@ -126,7 +126,7 @@ app.get('/api/health', (req, res) => {
   res.status(ready ? 200 : 503).json({
     status: ready ? 'OK' : 'STARTING',
     ready,
-    message: ready ? 'Accounty server is running' : 'Accounty server is starting up',
+    message: ready ? 'BillMou server is running' : 'BillMou server is starting up',
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.round((Date.now() - state.startedAt) / 1000),
     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'

@@ -2,7 +2,7 @@
  * Routes invoice issuing either directly to AADE myDATA (default, existing
  * aadeService flow) or through an e-invoicing provider.
  *
- *   EINVOICE_PROVIDER=parochos  -> invoices from the Accounty UI go through Parochos
+ *   EINVOICE_PROVIDER=parochos  -> invoices from the BillMou UI go through Parochos
  *   (unset / "mydata")          -> unchanged behaviour
  */
 const { getParochosService, ParochosError } = require('./parochosService');

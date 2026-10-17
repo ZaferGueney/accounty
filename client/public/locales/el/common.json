@@ -1,5 +1,5 @@
 {
-  "welcome": "Καλώς ήρθατε στο Accounty",
+  "welcome": "Καλώς ήρθατε στο BillMou",
   "description": "Μινιμαλιστική τιμολόγηση για την Ελλάδα",
   "serverStatus": "Κατάσταση Διακομιστή",
   "language": "Γλώσσα",
@@ -9,7 +9,7 @@
   "running": "Λειτουργεί",
   "disconnected": "Αποσυνδεδεμένο",
   "welcomeBack": "Καλώς επιστρέψατε",
-  "signInToYourDashboard": "Συνδεθείτε στον πίνακα ελέγχου του Accounty",
+  "signInToYourDashboard": "Συνδεθείτε στον πίνακα ελέγχου του BillMou",
   "emailAddress": "Διεύθυνση Email",
   "password": "Κωδικός Πρόσβασης",
   "signIn": "Σύνδεση",
@@ -17,7 +17,7 @@
   "dontHaveAccount": "Δεν έχετε λογαριασμό;",
   "signUp": "Εγγραφή",
   "welcomeToYourDashboard": "Καλώς ήρθατε στον Πίνακα Ελέγχου",
-  "youAreLoggedIn": "έχετε συνδεθεί επιτυχώς στο Accounty",
+  "youAreLoggedIn": "έχετε συνδεθεί επιτυχώς στο BillMou",
   "profileInformation": "Στοιχεία Προφίλ",
   "subscription": "Συνδρομή",
   "preferences": "Προτιμήσεις",
@@ -297,11 +297,11 @@
   "home": {
     "headline": "Τιμολόγηση για την Ελλάδα, χωρίς χαρτούρα.",
     "lead": "Εκδώστε τιμολόγια και αποδείξεις, διαβιβάστε τα στο myDATA της ΑΑΔΕ και κρατήστε τους πελάτες σας σε ένα ήσυχο σημείο.",
-    "cta": "Σύνδεση στο Accounty",
+    "cta": "Σύνδεση στο BillMou",
     "createAccount": "Δημιουργία λογαριασμού",
     "openDashboard": "Μετάβαση στον πίνακα",
     "checking": "Έλεγχος…",
-    "factsHeading": "Τι κάνει το Accounty",
+    "factsHeading": "Τι κάνει το BillMou",
     "facts": {
       "invoicesTitle": "Τιμολόγια και αποδείξεις",
       "invoicesText": "Τιμολόγια παροχής υπηρεσιών και πώλησης, πιστωτικά και αποδείξεις με αυτόματη αρίθμηση, ΦΠΑ και προεπισκόπηση PDF.",
@@ -371,7 +371,7 @@
       "passwordSaved": "Ο κωδικός άλλαξε",
       "passwordFailed": "Δεν ήταν δυνατή η αλλαγή του κωδικού",
       "typeTitle": "Τύπος λογαριασμού",
-      "typeDescription": "Πώς χρησιμοποιείτε το Accounty",
+      "typeDescription": "Πώς χρησιμοποιείτε το BillMou",
       "typeSave": "Ενημέρωση τύπου",
       "typeSaved": "Ο τύπος λογαριασμού ενημερώθηκε",
       "typeFailed": "Δεν ήταν δυνατή η ενημέρωση του τύπου λογαριασμού",
@@ -494,7 +494,7 @@
     },
     "preferences": {
       "title": "Προτιμήσεις",
-      "description": "Πώς εμφανίζεται και λειτουργεί το Accounty για εσάς",
+      "description": "Πώς εμφανίζεται και λειτουργεί το BillMou για εσάς",
       "emptyTitle": "Περισσότερες προτιμήσεις σύντομα",
       "emptyDescription": "Η γλώσσα και το θέμα βρίσκονται στην επάνω μπάρα. Οι ειδοποιήσεις θα εμφανιστούν εδώ."
     },
@@ -671,7 +671,7 @@
   },
   "errors": {
     "loadFailedTitle": "Δεν ήταν δυνατή η φόρτωση των δεδομένων",
-    "serverUnreachable": "Ο διακομιστής του Accounty δεν απάντησε. Ελέγξτε τη σύνδεσή σας και δοκιμάστε ξανά.",
+    "serverUnreachable": "Ο διακομιστής του BillMou δεν απάντησε. Ελέγξτε τη σύνδεσή σας και δοκιμάστε ξανά.",
     "generic": "Κάτι πήγε στραβά. Δοκιμάστε ξανά."
   },
   "statuses": {

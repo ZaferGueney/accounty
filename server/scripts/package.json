@@ -1,7 +1,7 @@
 {
-  "name": "accounty-server-scripts",
+  "name": "billmou-server-scripts",
   "version": "1.0.0",
-  "description": "Server utility scripts for Accounty project",
+  "description": "Server utility scripts for BillMou project",
   "scripts": {
     "import-kad": "node importKADFromExcel.js"
   },

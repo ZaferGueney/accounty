@@ -115,7 +115,7 @@ const sampleInvoice = (over = {}) => ({
 
 // ---------------------------------------------------------------- mapping
 
-test('maps an Accounty B2B service invoice to the Parochos source', () => {
+test('maps an BillMou B2B service invoice to the Parochos source', () => {
   const src = transformer.invoiceToSource(sampleInvoice(), { publishType: 'auto' });
   const inv = src.invoice;
   assert.deepEqual(inv.issuer, { vatNumber: '803058973', branch: 0, country: 'GR' });

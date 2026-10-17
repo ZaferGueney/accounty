@@ -1,8 +1,8 @@
-# Accounty Development Documentation
+# BillMou Development Documentation
 
 ## 🏗️ Project Architecture
 
-Accounty is a minimalistic Greek invoicing web application built with modern technologies and following strict MVC architecture patterns.
+BillMou is a minimalistic Greek invoicing web application built with modern technologies and following strict MVC architecture patterns.
 
 ### Tech Stack
 - **Frontend**: Next.js 16.0.1 with Pages Router, React, TypeScript
@@ -23,7 +23,7 @@ Accounty is a minimalistic Greek invoicing web application built with modern tec
 ## 📁 Project Structure
 
 ```
-Accounty/
+BillMou/
 ├── client/                 # Next.js Frontend
 │   ├── src/
 │   │   ├── components/     # Reusable UI components

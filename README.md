@@ -1,10 +1,10 @@
-# Accounty
+# BillMou
 
 A minimalistic invoicing web application for Greece, providing legally compliant invoicing solutions.
 
 ## Project Overview
 
-Accounty is a SevDesk alternative specifically designed for the Greek market, focusing on:
+BillMou is a SevDesk alternative specifically designed for the Greek market, focusing on:
 - Legal compliance with Greek tax regulations
 - Automated reporting to tax authorities via API integration
 - Minimalistic, clean user interface
@@ -35,7 +35,7 @@ Accounty is a SevDesk alternative specifically designed for the Greek market, fo
 ## Project Structure
 
 ```
-Accounty/
+BillMou/
 ├── client/          # Next.js frontend application
 ├── server/          # Node.js backend API
 └── README.md        # Project documentation

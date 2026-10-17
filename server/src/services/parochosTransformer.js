@@ -1,5 +1,5 @@
 /**
- * Maps an Accounty invoice (Mongo document / plain object) to the Parochos
+ * Maps an BillMou invoice (Mongo document / plain object) to the Parochos
  * "source" payload (Parochos API v3, "Tax Authorities & UBL2.1 configured in
  * External System"). Field names follow Parochos_API_Documentation_3.0.29.
  *
@@ -11,7 +11,7 @@ const aadeTransformer = require('./aadeTransformer');
 // AADE vatCategory -> VAT percent
 const VAT_PERCENT = { 1: 24, 2: 13, 3: 6, 4: 17, 5: 9, 6: 4, 7: 0, 8: 0, 9: 3, 10: 4 };
 
-// Accounty unit -> [AADE measurementUnit, UBL unit code (UN/ECE rec 20)]
+// BillMou unit -> [AADE measurementUnit, UBL unit code (UN/ECE rec 20)]
 // AADE codes: 1 pieces, 2 kg, 3 litres, 4 metres, 5 m2, 6 m3, 7 other.
 const UNITS = {
   pcs: [1, 'H87'],
@@ -34,7 +34,7 @@ const ymd = (date) => {
 };
 
 /**
- * Parochos wants the issue date WITH the time of issue. Accounty stores the
+ * Parochos wants the issue date WITH the time of issue. BillMou stores the
  * issue date (often midnight); when the record was created on that same day we
  * use the creation time, otherwise the stored timestamp as is.
  */
@@ -114,7 +114,7 @@ function buildLine(line, index, invoice) {
     vatCategory,
     vatPercent: VAT_PERCENT[vatCategory] ?? 0,
     vatCategoryUbl: vatCategoryUbl(vatCategory, invoice.vatRegulation),
-    // Not stored in the Accounty model yet; passed through if present.
+    // Not stored in the BillMou model yet; passed through if present.
     vatExemption: line.vatExemptionCategory || invoice.vatExemptionCategory
   });
 
@@ -214,7 +214,7 @@ function invoiceToSource(invoice, options = {}) {
   return source;
 }
 
-/** Stable Parochos externalSystemId for an Accounty invoice. */
+/** Stable Parochos externalSystemId for an BillMou invoice. */
 function externalSystemIdFor(invoice) {
   if (invoice.providerInfo?.externalSystemId) return invoice.providerInfo.externalSystemId;
   return `accounty-${String(invoice._id || invoice.id || invoice.invoiceNumber)}`;

@@ -20,7 +20,7 @@ function App({ Component, pageProps }: AppProps) {
   return (
     <>
       <Head>
-        <title>Accounty</title>
+        <title>BillMou</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)" />

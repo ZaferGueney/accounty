@@ -48,7 +48,7 @@ export default function LoginPage() {
 
       <main className="flex flex-1 items-start justify-center px-4 pb-16 pt-6 sm:items-center sm:pt-0">
         <div className="w-full max-w-sm">
-          <Link href="/" className="mb-8 inline-flex rounded-md" aria-label="Accounty">
+          <Link href="/" className="mb-8 inline-flex rounded-md" aria-label="BillMou">
             <Brand />
           </Link>
 

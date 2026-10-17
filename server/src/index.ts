@@ -13,7 +13,7 @@ app.use(express.json());
 
 // Basic health check route
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Accounty server is running' });
+  res.json({ status: 'OK', message: 'BillMou server is running' });
 });
 
 app.listen(PORT, () => {

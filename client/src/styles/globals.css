@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /*
- * Accounty design tokens.
+ * BillMou design tokens.
  * "Paper and ink": warm paper neutrals, ink text, one Aegean-blue accent.
  * Values are RGB channels so Tailwind can apply alpha (bg-accent/10).
  */

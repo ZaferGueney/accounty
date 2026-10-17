@@ -1,6 +1,6 @@
 # Commission & Host Payout Architecture
 
-This document outlines the commission tracking and host payout system for GuestCode (owned by LBNSWRK E.E.) integrated with Accounty.
+This document outlines the commission tracking and host payout system for GuestCode (owned by LBNSWRK E.E.) integrated with BillMou.
 
 ## Overview
 
@@ -17,9 +17,9 @@ All financial transactions must be reported to AADE (Greek tax authority).
 
 | Document | Greek Term | When Used | Who Creates |
 |----------|------------|-----------|-------------|
-| Receipt | Απόδειξη | Customer buys ticket | Accounty (for LBNSWRK) |
-| Self-Billed Invoice | Τιμολόγιο Αυτοτιμολόγησης | Host cashes out | Accounty (on host's behalf) |
-| Credit Note | Πιστωτικό | Refund/cancellation | Accounty (future feature) |
+| Receipt | Απόδειξη | Customer buys ticket | BillMou (for LBNSWRK) |
+| Self-Billed Invoice | Τιμολόγιο Αυτοτιμολόγησης | Host cashes out | BillMou (on host's behalf) |
+| Credit Note | Πιστωτικό | Refund/cancellation | BillMou (future feature) |
 
 ---
 
@@ -63,9 +63,9 @@ If not using self-billing:
 |------|----------|--------|
 | Pending commissions | GuestCode | Operational - not real money yet |
 | Host dashboard totals | GuestCode | Real-time UX data |
-| Completed Receipts | Accounty | Official AADE document |
-| Self-Billed Invoices | Accounty | Official AADE document |
-| Payout records | Accounty | Financial transaction records |
+| Completed Receipts | BillMou | Official AADE document |
+| Self-Billed Invoices | BillMou | Official AADE document |
+| Payout records | BillMou | Financial transaction records |
 
 ### GuestCode Commission Model (Simplified)
 
@@ -84,7 +84,7 @@ If not using self-billing:
   status: "pending" | "available" | "paid",
 
   // After payout
-  payoutId: String,             // Reference to Accounty payout
+  payoutId: String,             // Reference to BillMou payout
   paidAt: Date
 }
 ```
@@ -94,12 +94,12 @@ If not using self-billing:
 - Complex double-entry accounting
 - Currency conversion logic
 
-### Accounty Payout Model (New)
+### BillMou Payout Model (New)
 
 ```javascript
 // Track actual money movement
 {
-  userId: ObjectId,              // LBNSWRK Accounty user
+  userId: ObjectId,              // LBNSWRK BillMou user
 
   // Host details
   hostId: String,                // GuestCode brand/host ID
@@ -144,7 +144,7 @@ GuestCode: Create Commission {
   status: "pending"
 }
     ↓
-Accounty: POST /api/external/receipts
+BillMou: POST /api/external/receipts
     ↓
 AADE: Returns MARK for receipt
 ```
@@ -165,7 +165,7 @@ Host clicks "Cash Out" (€961.00 from 10 tickets)
     ↓
 GuestCode: Validate host has complete business details
     ↓
-Accounty: POST /api/external/payouts {
+BillMou: POST /api/external/payouts {
   host: {
     businessName: "Night Club XYZ",
     vatNumber: "123456789",
@@ -180,17 +180,17 @@ Accounty: POST /api/external/payouts {
   commissionIds: ["comm1", "comm2", ...]
 }
     ↓
-Accounty: Create Self-Billed Invoice
+BillMou: Create Self-Billed Invoice
   - Issuer: Host (Night Club XYZ)
   - Receiver: LBNSWRK E.E.
   - Amount: €961.00
   - Submit to AADE → Get MARK
     ↓
-Accounty: Initiate Stripe Transfer
+BillMou: Initiate Stripe Transfer
   - Amount: €961.00
   - Destination: Host's bank (IBAN)
     ↓
-Accounty: Return payout confirmation {
+BillMou: Return payout confirmation {
   payoutId,
   invoiceNumber,
   aadeMark,
@@ -294,7 +294,7 @@ if (event.country === 'GR') {
 
 ---
 
-## API Endpoints Needed in Accounty
+## API Endpoints Needed in BillMou
 
 ### 1. Create Payout (New)
 
@@ -413,7 +413,7 @@ Returns the self-billed invoice PDF to send to host.
 
 ## Summary
 
-| Component | GuestCode | Accounty |
+| Component | GuestCode | BillMou |
 |-----------|-----------|----------|
 | Commission tracking | ✅ Simplified model | - |
 | Host dashboard | ✅ Real-time totals | - |
@@ -423,4 +423,4 @@ Returns the self-billed invoice PDF to send to host.
 | Bank transfers | - | ✅ Stripe integration |
 | Tax reporting | - | ✅ All AADE data |
 
-**Key Principle:** GuestCode handles operational tracking, Accounty handles official financial records and AADE compliance.
+**Key Principle:** GuestCode handles operational tracking, BillMou handles official financial records and AADE compliance.

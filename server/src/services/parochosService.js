@@ -273,7 +273,7 @@ class ParochosService {
   }
 
   /**
-   * Transmit an Accounty invoice. If the invoice was already sent to Parochos
+   * Transmit an BillMou invoice. If the invoice was already sent to Parochos
    * (providerInfo.externalSystemId present) we first ask for its state so a
    * lost response never causes a duplicate transmission.
    */
@@ -325,7 +325,7 @@ class ParochosService {
     return this._call('post', '/api/GetFiles', body);
   }
 
-  /** PNG data URL of the provider QR link, for the Accounty PDF. */
+  /** PNG data URL of the provider QR link, for the BillMou PDF. */
   async qrDataUrl(url) {
     if (!url) return null;
     try {

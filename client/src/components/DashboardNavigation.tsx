@@ -69,7 +69,7 @@ const DashboardNavigation = () => {
     <>
       <header className="sticky top-0 z-40 border-b border-line bg-canvas/85 backdrop-blur-md supports-[backdrop-filter]:bg-canvas/75">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4 sm:px-6 lg:px-8">
-          <Link href="/dashboard" className="shrink-0 rounded-md" aria-label="Accounty">
+          <Link href="/dashboard" className="shrink-0 rounded-md" aria-label="BillMou">
             <Brand />
           </Link>
 
