@@ -565,8 +565,9 @@ invoiceSchema.virtual('amountDue').get(function() {
   return this.totals.totalAmount - (this.payment.amount || 0);
 });
 
-// Pre-save middleware to calculate totals and validate data
-invoiceSchema.pre('save', function(next) {
+// Calculate totals before validation (required totals must not fail when a
+// client omits them; they are always derived from the lines anyway)
+invoiceSchema.pre('validate', function(next) {
   // Calculate totals from invoice details
   let totalNetValue = 0;
   let totalVatAmount = 0;

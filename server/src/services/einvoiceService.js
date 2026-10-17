@@ -6,6 +6,7 @@
  *   (unset / "mydata")          -> unchanged behaviour
  */
 const { getParochosService, ParochosError } = require('./parochosService');
+const parochosTransformer = require('./parochosTransformer');
 
 const getProvider = () => {
   const p = String(process.env.EINVOICE_PROVIDER || 'mydata').trim().toLowerCase();
@@ -39,7 +40,13 @@ async function submitViaProvider(invoice, { service = getParochosService() } = {
     invoice.aadeInfo = invoice.aadeInfo || {};
     invoice.aadeInfo.transmissionFailure = isAuth ? 'authentication' : err.network ? 'network' : 'server_error';
     invoice.applyProviderResult(
-      { provider: 'parochos', errors: [{ code: err.code || 'ERROR', category: err.category, message: err.message }] },
+      {
+        provider: 'parochos',
+        // Remember the id even on failure: after a lost/timed-out response the
+        // next attempt asks Parochos for this id first instead of sending again.
+        externalSystemId: parochosTransformer.externalSystemIdFor(invoice),
+        errors: [{ code: err.code || 'ERROR', category: err.category, message: err.message }]
+      },
       service.env
     );
     await invoice.save();

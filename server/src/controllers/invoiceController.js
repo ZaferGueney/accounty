@@ -8,38 +8,206 @@ const pdfService = require('../services/pdfService');
 const aadeService = require('../services/aadeService');
 const aadeTransformer = require('../services/aadeTransformer');
 const einvoiceService = require('../services/einvoiceService');
+const { resolveAadeCredentials } = require('../services/aadeCredentials');
 const { getParochosService, ParochosError } = require('../services/parochosService');
-const path = require('path');
-const fs = require('fs').promises;
-const crypto = require('crypto');
 
-// Decrypt AADE subscription key from Settings
-const ENCRYPTION_KEY = process.env.AADE_ENCRYPTION_KEY || 'accounty-aade-encryption-key-2024-change-in-prod';
-const ALGORITHM = 'aes-256-cbc';
+// ---------------------------------------------------------------- helpers
 
-const decryptKey = (encryptedText) => {
-  const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32);
-  const parts = encryptedText.split(':');
-  const iv = Buffer.from(parts[0], 'hex');
-  const encrypted = parts[1];
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
+const idOf = (v) => (v && typeof v === 'object' && v._id ? v._id : v) || null;
+
+// Fields a client may never set directly on create/update.
+const SERVER_OWNED_FIELDS = [
+  '_id', 'id', '__v', 'userId', 'invoiceNumber', 'issuer', 'aadeInfo', 'aadeStatus', 'providerInfo',
+  'transmissionDate', 'modifications', 'createdAt', 'updatedAt', 'idempotencyKey', 'sendLockedAt',
+  'daysOverdue', 'amountDue', 'documentBrand', 'source', 'externalId', 'externalOrderId'
+];
+
+const sanitizeInvoiceInput = (body = {}) => {
+  const data = { ...body };
+  SERVER_OWNED_FIELDS.forEach((f) => delete data[f]);
+  // A duplicated invoice arrives with populated objects instead of ids.
+  if ('customerId' in data) data.customerId = idOf(data.customerId);
+  if ('clientId' in data) data.clientId = idOf(data.clientId);
+  return data;
 };
 
-// Submit through the configured e-invoicing provider (EINVOICE_PROVIDER=parochos).
-// Returns null when transmitted, otherwise sends the error/pending response.
-const submitInvoiceViaProvider = async (invoice, res) => {
-  const r = await einvoiceService.submitViaProvider(invoice);
-  if (r.outcome === 'transmitted') return null;
-  await invoice.populate(['customerId', 'clientId']);
-  return res.status(r.httpStatus || 400).json({
-    success: r.outcome === 'pending',
-    pending: r.outcome === 'pending',
-    message: r.message,
-    errors: r.errors,
-    invoice
+const buildBankingInfo = async (userId) => {
+  const userBanks = await Banking.getUserBanks(userId);
+  return userBanks.map((bank) => ({
+    accountName: bank.accountName,
+    bankName: bank.bankName,
+    iban: bank.iban,
+    swift: bank.swift,
+    isDefault: bank.isDefault
+  }));
+};
+
+// req.user is { userId, user }; the profile fields live on req.user.user.
+const userDisplayName = (req) => {
+  const u = req.user?.user || {};
+  return [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || '';
+};
+
+const buildIssuer = (settings, bankingInfo, fallback = {}, fallbackName = '') => ({
+  vatNumber: settings.tax?.afm || fallback.vatNumber,
+  country: 'GR',
+  branch: 0,
+  name: settings.business?.legalName || settings.business?.tradingName || fallback.name || fallbackName,
+  legalForm: settings.business?.legalForm || '',
+  address: {
+    street: settings.address?.street || fallback.address?.street,
+    number: settings.address?.number || fallback.address?.number,
+    postalCode: settings.address?.postalCode || fallback.address?.postalCode,
+    city: settings.address?.city || fallback.address?.city,
+    prefecture: settings.address?.prefecture || fallback.address?.prefecture,
+    country: 'GR'
+  },
+  taxInfo: {
+    afm: settings.tax?.afm || fallback.taxInfo?.afm,
+    doy: settings.tax?.doy || fallback.taxInfo?.doy,
+    gemi: settings.tax?.gemi || ''
+  },
+  activityCodes: settings.tax?.activityCodes || [],
+  banking: bankingInfo
+});
+
+// Problems that would make myDATA reject the invoice; checked before sending.
+const validateForSending = (invoice) => {
+  if (!invoice.counterpart?.name || !invoice.invoiceDetails || invoice.invoiceDetails.length === 0) {
+    return 'Invoice must have recipient and line items before sending';
+  }
+  const invalidLines = invoice.invoiceDetails.filter((line) => !line.description || !line.unitPrice);
+  if (invalidLines.length > 0) {
+    return 'All invoice lines must have descriptions and prices before sending';
+  }
+  return null;
+};
+
+const errorResult = (status, body) => ({ status, body: { success: false, ...body } });
+
+// Cross-request lock: only one transmission per invoice at a time, so a
+// double click or a client retry can never submit the same invoice twice.
+const SEND_LOCK_MS = 3 * 60 * 1000;
+const acquireSendLock = async (invoiceId) => {
+  const staleBefore = new Date(Date.now() - SEND_LOCK_MS);
+  const r = await Invoice.updateOne(
+    { _id: invoiceId, $or: [{ sendLockedAt: null }, { sendLockedAt: { $lt: staleBefore } }] },
+    { $set: { sendLockedAt: new Date() } }
+  );
+  return r.modifiedCount === 1;
+};
+const releaseSendLock = (invoiceId) =>
+  Invoice.updateOne({ _id: invoiceId }, { $unset: { sendLockedAt: 1 } }).catch((err) =>
+    console.error('Could not release send lock for', String(invoiceId), err.message)
+  );
+
+/**
+ * Transmit a saved invoice to myDATA, directly or through the configured
+ * provider. Never transmits twice: already transmitted -> success, a
+ * transmission already running -> 409.
+ * @returns {Promise<{status:number, body:object}>}
+ */
+const transmitInvoice = async (invoice, settings) => {
+  if (invoice.aadeStatus === 'transmitted') {
+    return { status: 200, body: { success: true, alreadyTransmitted: true } };
+  }
+
+  if (!(await acquireSendLock(invoice._id))) {
+    return errorResult(409, {
+      code: 'SEND_IN_PROGRESS',
+      message: 'This invoice is being sent to myDATA right now. Please wait a moment and refresh.'
+    });
+  }
+
+  try {
+    if (einvoiceService.usesProvider()) {
+      const r = await einvoiceService.submitViaProvider(invoice);
+      if (r.outcome === 'transmitted') return { status: 200, body: { success: true } };
+      return {
+        status: r.httpStatus || 400,
+        body: { success: r.outcome === 'pending', pending: r.outcome === 'pending', message: r.message, errors: r.errors }
+      };
+    }
+
+    const creds = resolveAadeCredentials(settings);
+    if (!creds.ok) {
+      invoice.status = 'draft';
+      await invoice.save();
+      return errorResult(400, { code: 'AADE_NOT_CONFIGURED', message: `${creds.message} The invoice was saved as a draft.` });
+    }
+
+    let aadeResponse;
+    try {
+      const aadeXML = aadeTransformer.invoiceToXML(invoice.toObject());
+      console.log(`📤 Submitting ${invoice.invoiceNumber} to AADE (credentials from ${creds.source === 'settings' ? 'Settings' : 'server environment'})`);
+      aadeResponse = await aadeService.sendInvoices(aadeXML, creds.credentials);
+    } catch (aadeError) {
+      console.error('💥 AADE submission error:', aadeError.message);
+      invoice.status = 'draft';
+      invoice.aadeStatus = 'failed';
+      invoice.aadeInfo.transmissionFailure = 'network';
+      await invoice.save();
+      return errorResult(502, {
+        code: 'AADE_UNREACHABLE',
+        message: `AADE submission failed: ${aadeError.message}. Invoice saved as draft - try again.`
+      });
+    }
+
+    if (!aadeResponse.success) {
+      console.error('❌ AADE rejected invoice', invoice.invoiceNumber, aadeResponse.errors);
+      invoice.status = 'draft';
+      invoice.aadeStatus = 'failed';
+      invoice.aadeInfo.transmissionFailure = 'validation';
+      await invoice.save();
+      return errorResult(400, {
+        code: 'AADE_REJECTED',
+        message: 'AADE rejected invoice. Invoice saved as draft - fix errors and try again.',
+        errors: aadeResponse.errors
+      });
+    }
+
+    console.log('✅ AADE submission successful:', aadeResponse.mark);
+    const qrCode = await aadeService.generateQRCode(aadeResponse.mark, aadeResponse.uid, aadeResponse.authenticationCode);
+    invoice.status = 'sent';
+    const aadeData = {
+      mark: aadeResponse.mark,
+      uid: aadeResponse.uid,
+      authenticationCode: aadeResponse.authenticationCode,
+      qrUrl: qrCode
+    };
+    try {
+      await invoice.markTransmitted(aadeData);
+    } catch (saveError) {
+      // AADE has the invoice; losing that fact would invite a duplicate send.
+      console.error(`‼️ ${invoice.invoiceNumber} accepted by AADE (MARK ${aadeData.mark}) but saving failed: ${saveError.message} - retrying with a direct update`);
+      await Invoice.updateOne({ _id: invoice._id }, {
+        $set: {
+          status: 'sent',
+          aadeStatus: 'transmitted',
+          transmissionDate: new Date(),
+          'aadeInfo.mark': aadeData.mark,
+          'aadeInfo.uid': aadeData.uid,
+          'aadeInfo.authenticationCode': aadeData.authenticationCode,
+          'aadeInfo.qrUrl': aadeData.qrUrl,
+          'aadeInfo.transmissionFailure': null
+        }
+      });
+    }
+    return { status: 200, body: { success: true } };
+  } finally {
+    await releaseSendLock(invoice._id);
+  }
+};
+
+// Reload with references populated and send the final create/update answer.
+const respondWithInvoice = async (res, invoiceId, { status, body }) => {
+  const invoice = await Invoice.findById(invoiceId).populate(['customerId', 'clientId']);
+  return res.status(status).json({ ...body, invoice });
+};
+
+const autoCreateServicesLater = (userId, invoiceDetails) => {
+  autoCreateServicesFromInvoice(userId, invoiceDetails).catch((err) => {
+    console.warn('Auto-create services warning:', err.message);
   });
 };
 
@@ -96,6 +264,13 @@ const getInvoices = async (req, res) => {
 
     const userId = req.user.userId;
     let query = { userId };
+
+    // The stored status only turns 'overdue' when a document is saved; bring
+    // past-due invoices up to date so the list and the status filter match.
+    await Invoice.updateMany(
+      { userId, status: 'sent', dueDate: { $lt: new Date() } },
+      { $set: { status: 'overdue' } }
+    );
 
     // Apply filters
     if (status) query.status = status;
@@ -200,10 +375,16 @@ const getInvoice = async (req, res) => {
 // @desc    Create a new invoice
 // @route   POST /api/invoices
 // @access  Private
+// Header Idempotency-Key (optional): a retry of the same create (timeout,
+// double click, "Save & Send" again after an error) reuses the invoice the
+// first attempt created instead of creating - and sending - a second one.
 const createInvoice = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const invoiceData = req.body;
+    const invoiceData = sanitizeInvoiceInput(req.body);
+    const wantsToSend = invoiceData.status === 'sent';
+    const rawKey = req.get('Idempotency-Key');
+    const idempotencyKey = rawKey && rawKey.length <= 128 ? rawKey : undefined;
 
     // Get user settings for issuer info
     const settings = await Settings.findOne({ userId });
@@ -212,6 +393,14 @@ const createInvoice = async (req, res) => {
         success: false,
         message: 'Please complete your tax settings before creating invoices'
       });
+    }
+
+    // Retry of an earlier create: continue with that invoice.
+    if (idempotencyKey) {
+      const existing = await Invoice.findOne({ userId, idempotencyKey });
+      if (existing) {
+        return continueExistingInvoice(req, res, existing, invoiceData, settings, { replay: true });
+      }
     }
 
     // Validate customer exists
@@ -229,216 +418,122 @@ const createInvoice = async (req, res) => {
       }
     }
 
-    // Generate invoice number
-    const invoiceNumber = await Invoice.generateInvoiceNumber(
-      userId,
-      invoiceData.series || 'A'
-    );
-
-    // Get all active banking information
-    const userBanks = await Banking.getUserBanks(userId);
-    const bankingInfo = userBanks.map(bank => ({
-      accountName: bank.accountName,
-      bankName: bank.bankName,
-      iban: bank.iban,
-      swift: bank.swift,
-      isDefault: bank.isDefault
-    }));
-
-    // Build issuer info from settings
-    const issuer = {
-      vatNumber: settings.tax.afm, // Business AFM (E.E.)
-      country: 'GR',
-      branch: 0,
-      name: settings.business?.legalName || settings.business?.tradingName || `${req.user.firstName} ${req.user.lastName}`,
-      legalForm: settings.business?.legalForm || '',
-      address: {
-        street: settings.address?.street,
-        number: settings.address?.number,
-        postalCode: settings.address?.postalCode,
-        city: settings.address?.city,
-        prefecture: settings.address?.prefecture,
-        country: 'GR'
-      },
-      taxInfo: {
-        afm: settings.tax.afm, // Business AFM (E.E.)
-        doy: settings.tax.doy,
-        gemi: settings.tax.gemi
-      },
-      activityCodes: settings.tax?.activityCodes || [],
-      banking: bankingInfo
-    };
-
-    console.log('📋 Invoice will be issued FROM:', {
-      businessName: issuer.name,
-      businessAFM: issuer.vatNumber,
-      note: 'This is the ISSUER of the invoice (from Settings)'
-    });
-
-    // For drafts, ensure line items have default values
-    if (invoiceData.status === 'draft' || !invoiceData.status) {
-      invoiceData.invoiceDetails = (invoiceData.invoiceDetails || []).map(detail => ({
-        ...detail,
-        description: detail.description || '',
-        unitPrice: detail.unitPrice || 0,
-        netValue: detail.netValue || 0,
-        vatAmount: detail.vatAmount || 0
-      }));
-      
-      // Ensure counterpart has at least empty values for draft
-      if (!invoiceData.counterpart?.name) {
-        invoiceData.counterpart = {
-          ...invoiceData.counterpart,
-          name: ''
-        };
-      }
+    if (wantsToSend) {
+      const problem = validateForSending(invoiceData);
+      if (problem) return res.status(400).json({ success: false, message: problem });
     }
 
+    const bankingInfo = await buildBankingInfo(userId);
+    const issuer = buildIssuer(settings, bankingInfo, {}, userDisplayName(req));
 
-    // Create invoice
-    const invoice = await Invoice.create({
+    // Line items always get usable defaults (drafts may be incomplete)
+    invoiceData.invoiceDetails = (invoiceData.invoiceDetails || []).map((detail, index) => ({
+      ...detail,
+      lineNumber: detail.lineNumber || index + 1,
+      description: detail.description || '',
+      unitPrice: detail.unitPrice || 0,
+      netValue: detail.netValue || 0,
+      vatAmount: detail.vatAmount || 0
+    }));
+    if (!invoiceData.counterpart?.name) {
+      invoiceData.counterpart = { ...invoiceData.counterpart, name: '' };
+    }
+
+    // A new invoice is never already paid: duplicating a paid invoice copied
+    // its payment amount, and the save hook then marked the copy 'paid'.
+    if (invoiceData.payment && invoiceData.status !== 'paid') {
+      invoiceData.payment = { method: invoiceData.payment.method, info: invoiceData.payment.info };
+    }
+
+    if (!invoiceData.dueDate) {
+      const days = Number(settings.invoicing?.paymentTerms ?? 30);
+      const base = invoiceData.issueDate ? new Date(invoiceData.issueDate) : new Date();
+      invoiceData.dueDate = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
+    }
+
+    // Always stored as a draft first; it only becomes 'sent' once myDATA (or
+    // the provider) has accepted it.
+    const requestedStatus = invoiceData.status;
+    const invoice = await Invoice.createWithNextNumber({
       ...invoiceData,
       userId,
-      invoiceNumber,
+      series: invoiceData.series || 'A',
       issuer,
-      status: invoiceData.status || 'draft'
+      idempotencyKey,
+      status: requestedStatus && requestedStatus !== 'sent' ? requestedStatus : 'draft'
     });
 
-    // If status is 'sent', submit through the e-invoicing provider or directly to AADE
-    if (invoiceData.status === 'sent' && einvoiceService.usesProvider()) {
-      const sent = await submitInvoiceViaProvider(invoice, res);
-      if (sent) return sent;
-    } else if (invoiceData.status === 'sent') {
-      try {
-        console.log('📤 Submitting invoice to AADE...', invoice.invoiceNumber);
-
-        // Check for AADE credentials in Settings OR .env
-        const hasSettingsCredentials = settings?.aadeCredentials?.isConfigured &&
-                                       settings.aadeCredentials?.username &&
-                                       settings.aadeCredentials?.subscriptionKey;
-
-        const hasEnvCredentials = process.env.NODE_ENV === 'production'
-          ? (process.env.AADE_PROD_USER_ID && process.env.AADE_PROD_KEY)
-          : (process.env.AADE_DEV_USER_ID && process.env.AADE_DEV_KEY);
-
-        // Return error only if NEITHER Settings NOR .env has credentials
-        if (!hasSettingsCredentials && !hasEnvCredentials) {
-          invoice.status = 'draft';
-          await invoice.save();
-
-          return res.status(400).json({
-            success: false,
-            message: 'AADE credentials not configured. Please configure your myDATA credentials in Settings or .env file.',
-            invoice
-          });
-        }
-
-        // 1. Transform invoice to AADE XML format
-        const aadeXML = aadeTransformer.invoiceToXML(invoice.toObject());
-
-        // 2. Build credentials from Settings (priority) or .env (fallback)
-        const userCredentials = hasSettingsCredentials
-          ? {
-              username: settings.aadeCredentials.username,
-              subscriptionKey: decryptKey(settings.aadeCredentials.subscriptionKey),
-              environment: settings.aadeCredentials.environment || 'development'
-            }
-          : {
-              username: process.env.NODE_ENV === 'production'
-                ? process.env.AADE_PROD_USER_ID
-                : process.env.AADE_DEV_USER_ID,
-              subscriptionKey: process.env.NODE_ENV === 'production'
-                ? process.env.AADE_PROD_KEY
-                : process.env.AADE_DEV_KEY,
-              environment: process.env.NODE_ENV || 'development'
-            };
-
-        console.log(`🔑 Using AADE credentials from: ${hasSettingsCredentials ? 'Settings' : '.env file'}`);
-
-        // 3. Submit to AADE API with user's credentials
-        const aadeResponse = await aadeService.sendInvoices(aadeXML, userCredentials);
-
-        // 3. Handle AADE response
-        if (aadeResponse.success) {
-          console.log('✅ AADE submission successful:', aadeResponse.mark);
-
-          // Generate QR code from AADE data
-          const qrCode = await aadeService.generateQRCode(
-            aadeResponse.mark,
-            aadeResponse.uid,
-            aadeResponse.authenticationCode
-          );
-
-          // NOW set status to sent since AADE succeeded
-          invoice.status = 'sent';
-
-          // Update invoice with AADE data
-          await invoice.markTransmitted({
-            mark: aadeResponse.mark,
-            uid: aadeResponse.uid,
-            authenticationCode: aadeResponse.authenticationCode,
-            qrUrl: qrCode
-          });
-
-        } else {
-          // AADE rejected the invoice - keep as draft
-          console.error('❌ AADE rejected invoice:', aadeResponse.errors);
-
-          invoice.status = 'draft';
-          invoice.aadeStatus = 'failed';
-          invoice.aadeInfo.transmissionFailure = 'validation';
-          await invoice.save();
-
-          // Populate before returning error
-          await invoice.populate(['customerId', 'clientId']);
-
-          return res.status(400).json({
-            success: false,
-            message: 'AADE rejected invoice. Invoice saved as draft - fix errors and try again.',
-            errors: aadeResponse.errors,
-            invoice
-          });
-        }
-
-      } catch (aadeError) {
-        console.error('💥 AADE submission error:', aadeError);
-
-        invoice.status = 'draft';
-        invoice.aadeStatus = 'failed';
-        invoice.aadeInfo.transmissionFailure = 'network';
-        await invoice.save();
-
-        // Populate before returning error
-        await invoice.populate(['customerId', 'clientId']);
-
-        return res.status(500).json({
-          success: false,
-          message: `AADE submission failed: ${aadeError.message}. Invoice saved as draft - try again.`,
-          invoice
-        });
-      }
+    let result = { status: 201, body: { success: true } };
+    if (wantsToSend) {
+      result = await transmitInvoice(invoice, settings);
+      if (result.status === 200) result.status = 201;
     }
 
-    // Auto-create services from invoice line items (fire and forget)
-    autoCreateServicesFromInvoice(userId, invoice.invoiceDetails).catch(err => {
-      console.warn('Auto-create services warning:', err.message);
-    });
-
-    // Populate references
-    await invoice.populate(['customerId', 'clientId']);
-
-    res.status(201).json({
-      success: true,
-      invoice
-    });
+    autoCreateServicesLater(userId, invoice.invoiceDetails);
+    return respondWithInvoice(res, invoice._id, result);
   } catch (error) {
     console.error('Create invoice error:', error);
-    res.status(400).json({
+    // A concurrent duplicate of the same request (same Idempotency-Key)
+    if (error.code === 11000 && error.keyPattern?.idempotencyKey) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_REQUEST',
+        message: 'This invoice is already being saved. Please wait a moment and refresh.'
+      });
+    }
+    res.status(error.name === 'ValidationError' || error.name === 'CastError' ? 400 : 500).json({
       success: false,
       message: 'Failed to create invoice',
       error: error.message
     });
   }
+};
+
+// Apply the editable fields of a create/update request to an invoice that is
+// not transmitted yet, then send it if asked to.
+const continueExistingInvoice = async (req, res, invoice, data, settings, { replay = false } = {}) => {
+  const wantsToSend = data.status === 'sent';
+
+  if (invoice.aadeStatus === 'transmitted' || (replay && ['cancelled', 'paid'].includes(invoice.status))) {
+    // Nothing left to do: report the stored state (idempotent replay).
+    return respondWithInvoice(res, invoice._id, {
+      status: 200,
+      body: { success: true, alreadyTransmitted: invoice.aadeStatus === 'transmitted', replayed: true }
+    });
+  }
+
+  const allowedUpdates = [
+    'counterpart', 'invoiceDetails', 'dueDate', 'notes', 'footerText',
+    'currency', 'exchangeRate', 'payment', 'vatRegulation', 'invoiceType',
+    'series', 'issueDate', 'totals', 'hideBankDetails'
+  ];
+  allowedUpdates.forEach((field) => {
+    if (data[field] !== undefined) invoice[field] = data[field];
+  });
+
+  // Always refresh issuer data from settings to ensure legalForm and gemi are current
+  if (settings) {
+    const bankingInfo = await buildBankingInfo(req.user.userId);
+    invoice.issuer = buildIssuer(settings, bankingInfo, invoice.issuer || {}, userDisplayName(req));
+  }
+
+  if (wantsToSend) {
+    const problem = validateForSending(invoice);
+    if (problem) return res.status(400).json({ success: false, message: problem });
+  }
+
+  if (data.status && data.status !== 'sent') {
+    invoice.status = data.status;
+  }
+  await invoice.save();
+
+  let result = { status: 200, body: { success: true } };
+  if (wantsToSend) {
+    result = await transmitInvoice(invoice, settings);
+  }
+
+  autoCreateServicesLater(req.user.userId, invoice.invoiceDetails);
+  return respondWithInvoice(res, invoice._id, result);
 };
 
 // @desc    Update an invoice
@@ -458,229 +553,29 @@ const updateInvoice = async (req, res) => {
       });
     }
 
+    const data = sanitizeInvoiceInput(req.body);
+
     // Check if invoice can be edited
     if (invoice.aadeStatus === 'transmitted') {
+      if (data.status === 'sent') {
+        // "Send" again after a timeout although the first attempt went
+        // through: that is success, not an error.
+        return respondWithInvoice(res, invoice._id, {
+          status: 200,
+          body: { success: true, alreadyTransmitted: true }
+        });
+      }
       return res.status(400).json({
         success: false,
         message: 'Cannot edit invoice that has been transmitted to AADE'
       });
     }
 
-    // Update fields
-    const allowedUpdates = [
-      'counterpart', 'invoiceDetails', 'dueDate', 'notes', 'footerText',
-      'currency', 'exchangeRate', 'payment', 'vatRegulation', 'invoiceType',
-      'series', 'issueDate', 'totals', 'hideBankDetails'
-    ];
-
-    allowedUpdates.forEach(field => {
-      if (req.body[field] !== undefined) {
-        invoice[field] = req.body[field];
-      }
-    });
-
-    // Always refresh issuer data from settings to ensure legalForm and gemi are current
     const settings = await Settings.findOne({ userId: req.user.userId });
-    if (settings) {
-      // Get banking info
-      const userBanks = await Banking.getUserBanks(req.user.userId);
-      const bankingInfo = userBanks.map(bank => ({
-        accountName: bank.accountName,
-        bankName: bank.bankName,
-        iban: bank.iban,
-        swift: bank.swift,
-        isDefault: bank.isDefault
-      }));
-
-      // Update issuer with current settings (ensures legalForm and gemi are always present)
-      invoice.issuer = {
-        vatNumber: settings.tax?.afm || invoice.issuer?.vatNumber,
-        country: 'GR',
-        branch: 0,
-        name: settings.business?.legalName || settings.business?.tradingName || invoice.issuer?.name,
-        legalForm: settings.business?.legalForm || '',
-        address: {
-          street: settings.address?.street || invoice.issuer?.address?.street,
-          number: settings.address?.number || invoice.issuer?.address?.number,
-          postalCode: settings.address?.postalCode || invoice.issuer?.address?.postalCode,
-          city: settings.address?.city || invoice.issuer?.address?.city,
-          prefecture: settings.address?.prefecture || invoice.issuer?.address?.prefecture,
-          country: 'GR'
-        },
-        taxInfo: {
-          afm: settings.tax?.afm || invoice.issuer?.taxInfo?.afm,
-          doy: settings.tax?.doy || invoice.issuer?.taxInfo?.doy,
-          gemi: settings.tax?.gemi || ''
-        },
-        activityCodes: settings.tax?.activityCodes || [],
-        banking: bankingInfo
-      };
-    }
-
-    // If changing status to sent, validate invoice is complete
-    if (req.body.status === 'sent' && invoice.status === 'draft') {
-      if (!invoice.counterpart?.name || invoice.invoiceDetails.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invoice must have recipient and line items before sending'
-        });
-      }
-      
-      // Validate all line items have descriptions and prices
-      const invalidLines = invoice.invoiceDetails.filter(line => !line.description || line.unitPrice === 0);
-      if (invalidLines.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'All invoice lines must have descriptions and prices before sending'
-        });
-      }
-    }
-
-    // Handle status change and AADE submission
-    const wantsToSend = req.body.status === 'sent';
-    const shouldTryAADE = wantsToSend && (invoice.status !== 'sent' || invoice.aadeStatus === 'failed');
-
-    // Update other fields first
-    if (req.body.status && req.body.status !== 'sent') {
-      invoice.status = req.body.status;
-    }
-
-    await invoice.save();
-
-    // If user wants to send, submit through the e-invoicing provider or directly to AADE
-    if (shouldTryAADE && einvoiceService.usesProvider()) {
-      const sent = await submitInvoiceViaProvider(invoice, res);
-      if (sent) return sent;
-    } else if (shouldTryAADE) {
-      try {
-        console.log('📤 Submitting updated invoice to AADE...', invoice.invoiceNumber);
-
-        // Get user settings for AADE credentials
-        const settings = await Settings.findOne({ userId: req.user.userId });
-
-        // Check for AADE credentials in Settings OR .env
-        const hasSettingsCredentials = settings?.aadeCredentials?.isConfigured &&
-                                       settings.aadeCredentials?.username &&
-                                       settings.aadeCredentials?.subscriptionKey;
-
-        const hasEnvCredentials = process.env.NODE_ENV === 'production'
-          ? (process.env.AADE_PROD_USER_ID && process.env.AADE_PROD_KEY)
-          : (process.env.AADE_DEV_USER_ID && process.env.AADE_DEV_KEY);
-
-        // Return error only if NEITHER Settings NOR .env has credentials
-        if (!hasSettingsCredentials && !hasEnvCredentials) {
-          invoice.status = 'draft';
-          await invoice.save();
-          await invoice.populate(['customerId', 'clientId']);
-
-          return res.status(400).json({
-            success: false,
-            message: 'AADE credentials not configured. Please configure your myDATA credentials in Settings or .env file.',
-            invoice
-          });
-        }
-
-        // 1. Transform invoice to AADE XML format
-        const aadeXML = aadeTransformer.invoiceToXML(invoice.toObject());
-        console.log('📝 Generated XML (first 500 chars):', aadeXML.substring(0, 500));
-
-        // 2. Build credentials from Settings (priority) or .env (fallback)
-        const userCredentials = hasSettingsCredentials
-          ? {
-              username: settings.aadeCredentials.username,
-              subscriptionKey: decryptKey(settings.aadeCredentials.subscriptionKey),
-              environment: settings.aadeCredentials.environment || 'development'
-            }
-          : {
-              username: process.env.NODE_ENV === 'production'
-                ? process.env.AADE_PROD_USER_ID
-                : process.env.AADE_DEV_USER_ID,
-              subscriptionKey: process.env.NODE_ENV === 'production'
-                ? process.env.AADE_PROD_KEY
-                : process.env.AADE_DEV_KEY,
-              environment: process.env.NODE_ENV || 'development'
-            };
-
-        console.log(`🔑 Using AADE credentials from: ${hasSettingsCredentials ? 'Settings' : '.env file'}`);
-
-        // 3. Submit to AADE API with user's credentials
-        const aadeResponse = await aadeService.sendInvoices(aadeXML, userCredentials);
-
-        // 3. Handle AADE response
-        if (aadeResponse.success) {
-          console.log('✅ AADE submission successful:', aadeResponse.mark);
-
-          // Generate QR code from AADE data
-          const qrCode = await aadeService.generateQRCode(
-            aadeResponse.mark,
-            aadeResponse.uid,
-            aadeResponse.authenticationCode
-          );
-
-          // NOW set status to sent since AADE succeeded
-          invoice.status = 'sent';
-
-          // Update invoice with AADE data
-          await invoice.markTransmitted({
-            mark: aadeResponse.mark,
-            uid: aadeResponse.uid,
-            authenticationCode: aadeResponse.authenticationCode,
-            qrUrl: qrCode
-          });
-
-        } else {
-          // AADE rejected the invoice - keep as draft
-          console.error('❌ AADE rejected invoice:', aadeResponse.errors);
-
-          invoice.status = 'draft';
-          invoice.aadeStatus = 'failed';
-          invoice.aadeInfo.transmissionFailure = 'validation';
-          await invoice.save();
-
-          // Populate before returning error
-          await invoice.populate(['customerId', 'clientId']);
-
-          return res.status(400).json({
-            success: false,
-            message: 'AADE rejected invoice. Invoice saved as draft - fix errors and try again.',
-            errors: aadeResponse.errors,
-            invoice
-          });
-        }
-
-      } catch (aadeError) {
-        console.error('💥 AADE submission error:', aadeError);
-
-        invoice.status = 'draft';
-        invoice.aadeStatus = 'failed';
-        invoice.aadeInfo.transmissionFailure = 'network';
-        await invoice.save();
-
-        // Populate before returning error
-        await invoice.populate(['customerId', 'clientId']);
-
-        return res.status(500).json({
-          success: false,
-          message: `AADE submission failed: ${aadeError.message}. Invoice saved as draft - try again.`,
-          invoice
-        });
-      }
-    }
-
-    // Auto-create services from invoice line items (fire and forget)
-    autoCreateServicesFromInvoice(req.user.userId, invoice.invoiceDetails).catch(err => {
-      console.warn('Auto-create services warning:', err.message);
-    });
-
-    await invoice.populate(['customerId', 'clientId']);
-
-    res.json({
-      success: true,
-      invoice
-    });
+    return await continueExistingInvoice(req, res, invoice, data, settings);
   } catch (error) {
     console.error('Update invoice error:', error);
-    res.status(400).json({
+    res.status(error.name === 'ValidationError' || error.name === 'CastError' ? 400 : 500).json({
       success: false,
       message: 'Failed to update invoice',
       error: error.message
@@ -839,30 +734,12 @@ const getNextInvoiceNumber = async (req, res) => {
 // @access  Private
 const previewInvoice = async (req, res) => {
   try {
-    console.log('📄 Starting PDF preview generation...');
     const userId = req.user.userId;
-    const invoiceData = req.body;
+    const invoiceData = { ...req.body };
     const theme = req.query.theme || 'light';
 
-    console.log('📋 Invoice data received:', {
-      userId,
-      theme,
-      hasInvoiceData: !!invoiceData,
-      invoiceNumber: invoiceData?.invoiceNumber,
-      counterpartName: invoiceData?.counterpart?.name,
-      itemsCount: invoiceData?.invoiceDetails?.length || 0,
-      totalsPresent: !!invoiceData?.totals
-    });
-
     // ALWAYS fetch banking information (needed for PDF)
-    const userBanks = await Banking.getUserBanks(userId);
-    const bankingInfo = userBanks.map(bank => ({
-      accountName: bank.accountName,
-      bankName: bank.bankName,
-      iban: bank.iban,
-      swift: bank.swift,
-      isDefault: bank.isDefault
-    }));
+    const bankingInfo = await buildBankingInfo(userId);
 
     // Get user settings for issuer info if not provided
     if (!invoiceData.issuer) {
@@ -873,72 +750,31 @@ const previewInvoice = async (req, res) => {
           message: 'Please complete your tax settings before previewing invoices'
         });
       }
-
-      invoiceData.issuer = {
-        vatNumber: settings.tax.afm,
-        country: 'GR',
-        branch: 0,
-        name: settings.business?.legalName || settings.business?.tradingName || `${req.user.firstName} ${req.user.lastName}`,
-        legalForm: settings.business?.legalForm || '',
-        address: {
-          street: settings.address?.street,
-          number: settings.address?.number,
-          postalCode: settings.address?.postalCode,
-          city: settings.address?.city,
-          prefecture: settings.address?.prefecture,
-          country: 'GR'
-        },
-        taxInfo: {
-          afm: settings.tax.afm,
-          doy: settings.tax.doy,
-          gemi: settings.tax.gemi
-        },
-        activityCodes: settings.tax?.activityCodes || [],
-        banking: bankingInfo
-      };
+      invoiceData.issuer = buildIssuer(settings, bankingInfo, {}, userDisplayName(req));
     } else {
       // Issuer exists from frontend, just attach banking
-      invoiceData.issuer.banking = bankingInfo;
+      invoiceData.issuer = { ...invoiceData.issuer, banking: bankingInfo };
     }
 
     // Generate temporary invoice number for preview
     if (!invoiceData.invoiceNumber) {
       invoiceData.invoiceNumber = 'DRAFT-' + Date.now();
-      console.log('🔢 Generated temporary invoice number:', invoiceData.invoiceNumber);
     }
 
-    console.log('🔄 Calling PDF service to generate PDF...');
     // Get language from query params or user preferences
-    const language = req.query.lang || req.user?.preferences?.language || 'en';
-    console.log('🌐 Using language:', language);
+    const language = req.query.lang || req.user?.user?.preferences?.language || 'en';
 
     // Only show watermark for draft invoices, not for sent/transmitted ones
     const isPreview = !(invoiceData.status === 'sent' || invoiceData.aadeStatus === 'transmitted');
-    console.log('📄 Preview mode:', isPreview, '(status:', invoiceData.status, ', aadeStatus:', invoiceData.aadeStatus + ')');
 
-    // Generate PDF using the PDF service
     const pdfBuffer = await pdfService.generateInvoicePDF(invoiceData, theme, isPreview, language);
 
-    console.log('✅ PDF generated successfully:', {
-      bufferSize: pdfBuffer.length,
-      sizeInKB: Math.round(pdfBuffer.length / 1024)
-    });
-    
-    // Set headers for PDF response
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="invoice-${invoiceData.invoiceNumber || 'draft'}.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);
-    
-    // Send PDF buffer
     res.send(pdfBuffer);
-    console.log('📨 PDF sent to client successfully');
   } catch (error) {
-    console.error('💥 Preview invoice error:', {
-      message: error.message,
-      stack: error.stack,
-      userId: req.user?.userId,
-      invoiceNumber: req.body?.invoiceNumber
-    });
+    console.error('💥 Preview invoice error:', error.stack || error.message);
     res.status(500).json({
       success: false,
       message: 'Failed to preview invoice',
@@ -964,19 +800,23 @@ const cancelAADEInvoice = async (req, res) => {
       });
     }
 
+    // Already cancelled (e.g. a retried request after a timeout): report success
+    if (invoice.aadeStatus === 'cancelled') {
+      await invoice.populate(['customerId', 'clientId']);
+      return res.json({
+        success: true,
+        alreadyCancelled: true,
+        message: 'Invoice is already cancelled in AADE',
+        cancellationMark: invoice.aadeInfo?.cancelledByMark,
+        invoice
+      });
+    }
+
     // Check if invoice is transmitted to AADE
     if (invoice.aadeStatus !== 'transmitted') {
       return res.status(400).json({
         success: false,
         message: 'Only invoices transmitted to AADE can be cancelled via this endpoint. Use regular delete for non-transmitted invoices.'
-      });
-    }
-
-    // Check if already cancelled
-    if (invoice.aadeStatus === 'cancelled') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invoice is already cancelled in AADE'
       });
     }
 
@@ -1020,35 +860,17 @@ const cancelAADEInvoice = async (req, res) => {
     // Get user settings for AADE credentials
     const settings = await Settings.findOne({ userId: req.user.userId });
 
-    // Check for AADE credentials in Settings OR .env
-    const hasSettingsCredentials = settings?.aadeCredentials?.isConfigured &&
-                                   settings.aadeCredentials?.username &&
-                                   settings.aadeCredentials?.subscriptionKey;
-
-    const hasEnvCredentials = process.env.AADE_USER_ID &&
-                             (process.env.AADE_KEY || process.env.AADE);
-
-    if (!hasSettingsCredentials && !hasEnvCredentials) {
+    // Same credential resolution as sending (Settings first, then server env)
+    const creds = resolveAadeCredentials(settings);
+    if (!creds.ok) {
       return res.status(400).json({
         success: false,
-        message: 'AADE credentials not configured. Cannot cancel invoice in AADE.'
+        code: 'AADE_NOT_CONFIGURED',
+        message: `${creds.message} Cannot cancel the invoice in AADE.`
       });
     }
-
-    // Build credentials from Settings (priority) or .env (fallback)
-    const userCredentials = hasSettingsCredentials
-      ? {
-          username: settings.aadeCredentials.username,
-          subscriptionKey: decryptKey(settings.aadeCredentials.subscriptionKey),
-          environment: settings.aadeCredentials.environment || 'development'
-        }
-      : {
-          username: process.env.AADE_USER_ID,
-          subscriptionKey: process.env.AADE_KEY || process.env.AADE,
-          environment: process.env.NODE_ENV || 'development'
-        };
-
-    console.log(`🔑 Using AADE credentials from: ${hasSettingsCredentials ? 'Settings' : '.env file'}`);
+    const userCredentials = creds.credentials;
+    console.log(`🔑 Using AADE credentials from: ${creds.source === 'settings' ? 'Settings' : 'server environment'}`);
 
     // Call AADE cancellation
     const cancellationResult = await aadeService.cancelInvoice(

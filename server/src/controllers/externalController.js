@@ -156,7 +156,8 @@ const createReceipt = async (req, res) => {
     const totalAmount = totalNetValue + totalVatAmount;
 
     // Create the receipt invoice
-    const receipt = await Invoice.create({
+    // Non-SiteMou numbers: take the next free one if a concurrent request won the race
+    const receipt = await (isSiteMou ? Invoice.create.bind(Invoice) : Invoice.createWithNextNumber.bind(Invoice))({
       userId,
       invoiceNumber: receiptNumber,
       series: isSiteMou ? 'SMR' : 'R',
@@ -237,7 +238,7 @@ const createReceipt = async (req, res) => {
           receipt.transmissionDate = new Date();
           await receipt.save();
 
-          console.log(`✅ Receipt ${receiptNumber} transmitted to AADE with MARK: ${aadeResult.mark}`);
+          console.log(`✅ Receipt ${receipt.invoiceNumber} transmitted to AADE with MARK: ${aadeResult.mark}`);
         } else {
           // Log error but don't fail - receipt is created
           console.error('AADE transmission failed:', aadeResult.errors);
@@ -587,7 +588,7 @@ const createInvoice = async (req, res) => {
     const totalAmount = totalNetValue + totalVatAmount;
 
     // Create the invoice
-    const invoice = await Invoice.create({
+    const invoice = await (isSiteMou ? Invoice.create.bind(Invoice) : Invoice.createWithNextNumber.bind(Invoice))({
       userId,
       invoiceNumber,
       series: isSiteMou ? 'SMI' : 'A',
@@ -653,7 +654,7 @@ const createInvoice = async (req, res) => {
           invoice.transmissionDate = new Date();
           await invoice.save();
 
-          console.log(`✅ Invoice ${invoiceNumber} transmitted to AADE with MARK: ${aadeResult.mark}`);
+          console.log(`✅ Invoice ${invoice.invoiceNumber} transmitted to AADE with MARK: ${aadeResult.mark}`);
         } else {
           console.error('AADE transmission failed:', aadeResult.errors);
           invoice.aadeStatus = 'failed';
