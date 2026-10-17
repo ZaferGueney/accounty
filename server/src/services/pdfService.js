@@ -4,9 +4,15 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 
+// Step-by-step PDF logging is only useful while debugging templates.
+const debugLog = (...args) => {
+  if (process.env.PDF_DEBUG === '1' || process.env.PDF_DEBUG === 'true') console.log(...args);
+};
+
 class PDFService {
   constructor() {
     this.browser = null;
+    this.launching = null;
     this.translations = {};
     this.defaultLogoBase64 = null;
   }
@@ -147,53 +153,97 @@ class PDFService {
   }
 
   async initialize() {
-    if (!this.browser) {
-      const isProduction = process.env.NODE_ENV === 'production';
+    // A crashed/closed Chrome left a dead handle behind and every PDF failed
+    // until the server was restarted. Reconnect transparently instead.
+    if (this.browser && this.browser.connected === false) {
+      this.browser = null;
+    }
+    if (this.browser) return this.browser;
+    // Concurrent first requests share one launch instead of starting several.
+    if (!this.launching) {
+      this.launching = this.launchBrowser()
+        .then((browser) => {
+          this.browser = browser;
+          browser.on('disconnected', () => {
+            if (this.browser === browser) this.browser = null;
+          });
+          return browser;
+        })
+        .finally(() => {
+          this.launching = null;
+        });
+    }
+    return this.launching;
+  }
 
-      let launchOptions;
+  async launchBrowser() {
+    const isProduction = process.env.NODE_ENV === 'production';
+    let launchOptions;
 
-      if (isProduction) {
-        // Use @sparticuz/chromium for cloud deployment
-        launchOptions = {
-          args: chromium.args,
-          defaultViewport: chromium.defaultViewport,
-          executablePath: await chromium.executablePath(),
-          headless: chromium.headless,
-        };
-        console.log('🚀 Launching Puppeteer with @sparticuz/chromium');
-      } else {
-        // Local development - use system Chrome
-        const possiblePaths = [
-          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-          '/Applications/Chromium.app/Contents/MacOS/Chromium',
-          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-          '/usr/bin/google-chrome',
-          '/usr/bin/chromium-browser'
-        ];
+    if (isProduction) {
+      // Use @sparticuz/chromium for cloud deployment
+      launchOptions = {
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+      };
+      console.log('🚀 Launching Puppeteer with @sparticuz/chromium');
+    } else {
+      // Local development - use system Chrome (PUPPETEER_EXECUTABLE_PATH overrides)
+      const possiblePaths = [
+        process.env.PUPPETEER_EXECUTABLE_PATH,
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        'C:/Program Files/Google/Chrome/Application/chrome.exe',
+        'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium-browser'
+      ].filter(Boolean);
 
-        let executablePath = null;
-        for (const chromePath of possiblePaths) {
-          if (fsSync.existsSync(chromePath)) {
-            executablePath = chromePath;
-            break;
-          }
-        }
-
-        launchOptions = {
-          headless: 'new',
-          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-          executablePath
-        };
-        console.log('🚀 Launching Puppeteer with local Chrome at:', executablePath);
+      const executablePath = possiblePaths.find((p) => fsSync.existsSync(p));
+      if (!executablePath) {
+        throw new Error('No Chrome/Chromium found for PDF generation - install Chrome or set PUPPETEER_EXECUTABLE_PATH');
       }
 
-      this.browser = await puppeteer.launch(launchOptions);
+      launchOptions = {
+        headless: 'new',
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+        executablePath
+      };
+      console.log('🚀 Launching Puppeteer with local Chrome at:', executablePath);
+    }
+
+    return puppeteer.launch(launchOptions);
+  }
+
+  // Run fn(page) on a fresh tab; if the browser died underneath, relaunch once.
+  async withPage(fn) {
+    for (let attempt = 1; ; attempt++) {
+      const browser = await this.initialize();
+      let page;
+      try {
+        page = await browser.newPage();
+        return await fn(page);
+      } catch (error) {
+        const browserGone = browser.connected === false ||
+          /Target closed|Session closed|Connection closed|Protocol error|browser has disconnected/i.test(error.message || '');
+        if (browserGone && attempt === 1) {
+          console.warn('PDFService: browser connection lost, relaunching -', error.message);
+          if (this.browser === browser) this.browser = null;
+          try { await browser.close(); } catch (_) { /* already gone */ }
+          continue;
+        }
+        throw error;
+      } finally {
+        if (page) await page.close().catch(() => {});
+      }
     }
   }
 
   async generateInvoicePDF(invoiceData, theme = 'light', isPreview = false, language = 'en') {
-    console.log('🎨 PDFService: Starting PDF generation with theme:', theme, 'language:', language);
-    console.log('📊 PDFService: Invoice data preview:', {
+    debugLog('🎨 PDFService: Starting PDF generation with theme:', theme, 'language:', language);
+    debugLog('📊 PDFService: Invoice data preview:', {
       invoiceNumber: invoiceData.invoiceNumber,
       issuerName: invoiceData.issuer?.name,
       counterpartName: invoiceData.counterpart?.name,
@@ -203,51 +253,37 @@ class PDFService {
       language
     });
 
-    await this.initialize();
-    console.log('🌐 PDFService: Browser initialized');
-
-    const page = await this.browser.newPage();
-    console.log('📄 PDFService: New page created');
+    // Build the HTML once, outside the browser retry
+    const html = await this.generateInvoiceHTML(invoiceData, theme, isPreview, language);
+    debugLog('PDFService: HTML generated, length:', html.length);
 
     try {
-      // Generate HTML content from invoice data
-      console.log('🔄 PDFService: Generating HTML content...');
-      const html = await this.generateInvoiceHTML(invoiceData, theme, isPreview, language);
-      console.log('✅ PDFService: HTML generated, length:', html.length);
-      
-      // Set content and wait for any resources
-      console.log('🔄 PDFService: Setting page content...');
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-      console.log('✅ PDFService: Page content set');
-      
-      // Generate PDF
-      console.log('🔄 PDFService: Generating PDF...');
-      const pdf = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: {
-          top: '20mm',
-          bottom: '20mm',
-          left: '15mm',
-          right: '15mm'
-        }
+      const pdf = await this.withPage(async (page) => {
+        // Bounded wait: a slow external asset must not hang the request.
+        await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+        return page.pdf({
+          format: 'A4',
+          printBackground: true,
+          margin: {
+            top: '20mm',
+            bottom: '20mm',
+            left: '15mm',
+            right: '15mm'
+          }
+        });
       });
-      console.log('✅ PDFService: PDF generated, size:', pdf.length, 'bytes');
-      
+      debugLog('PDFService: PDF generated, size:', pdf.length, 'bytes');
       return pdf;
     } catch (error) {
-      console.error('💥 PDFService: Error generating PDF:', error);
+      console.error('PDFService: Error generating PDF:', error.message);
       throw error;
-    } finally {
-      await page.close();
-      console.log('🧹 PDFService: Page closed');
     }
   }
 
   async generateInvoiceHTML(invoice, theme = 'light', isPreview = false, language = 'en') {
     if (invoice.documentBrand === 'sitemou') return require('./sitemouDocument').html(invoice,language,isPreview);
-    console.log('📄 PDFService: Starting HTML generation...');
-    console.log('📋 PDFService: Invoice details:', {
+    debugLog('📄 PDFService: Starting HTML generation...');
+    debugLog('📋 PDFService: Invoice details:', {
       invoiceNumber: invoice.invoiceNumber,
       issueDate: invoice.issueDate,
       dueDate: invoice.dueDate,
@@ -262,9 +298,9 @@ class PDFService {
 
     // Get invoice template
     const templatePath = path.join(__dirname, '../templates/invoiceTemplate.html');
-    console.log('📄 PDFService: Loading template from:', templatePath);
+    debugLog('📄 PDFService: Loading template from:', templatePath);
     let template = await fs.readFile(templatePath, 'utf8');
-    console.log('✅ PDFService: Template loaded, length:', template.length);
+    debugLog('✅ PDFService: Template loaded, length:', template.length);
     
     // Theme configuration
     const themes = {
@@ -304,7 +340,7 @@ class PDFService {
     };
 
     const currentTheme = themes[theme] || themes.light;
-    console.log('🎨 PDFService: Using theme:', theme, 'colors:', currentTheme);
+    debugLog('🎨 PDFService: Using theme:', theme, 'colors:', currentTheme);
 
     // Calculate totals
     const totals = invoice.totals || {
@@ -312,7 +348,7 @@ class PDFService {
       totalVatAmount: 0,
       totalAmount: 0
     };
-    console.log('💰 PDFService: Calculated totals:', totals);
+    debugLog('💰 PDFService: Calculated totals:', totals);
 
     // Format date
     const formatDate = (dateString) => {
@@ -341,9 +377,9 @@ class PDFService {
     };
 
     // Generate invoice items HTML first with proper theme replacement
-    console.log('🔄 PDFService: Generating invoice items HTML...');
+    debugLog('🔄 PDFService: Generating invoice items HTML...');
     const invoiceItemsHTML = this.generateInvoiceItemsHTML(invoice.invoiceDetails || [], invoice.currency, currentTheme);
-    console.log('✅ PDFService: Invoice items generated, length:', invoiceItemsHTML.length);
+    debugLog('✅ PDFService: Invoice items generated, length:', invoiceItemsHTML.length);
 
     // Get KAD codes if available
     const activityCodes = invoice.issuer?.activityCodes || [];
@@ -514,8 +550,8 @@ class PDFService {
       '{{previewWatermark}}': isPreview ? '<div class="preview-watermark">PREVIEW</div>' : ''
     };
 
-    console.log('🔄 PDFService: Replacing placeholders...');
-    console.log('📄 PDFService: Replacement values preview:', {
+    debugLog('🔄 PDFService: Replacing placeholders...');
+    debugLog('📄 PDFService: Replacement values preview:', {
       invoiceNumber: replacements['{{invoiceNumber}}'],
       issuerName: replacements['{{issuer.name}}'],
       counterpartName: replacements['{{counterpart.name}}'],
@@ -527,21 +563,21 @@ class PDFService {
       template = template.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
     }
 
-    console.log('✅ PDFService: All placeholders replaced, final HTML length:', template.length);
+    debugLog('✅ PDFService: All placeholders replaced, final HTML length:', template.length);
     return template;
   }
 
   generateInvoiceItemsHTML(items, currency = 'EUR', theme) {
     const currencySymbol = currency === 'EUR' ? '€' : currency === 'USD' ? '$' : '£';
-    console.log('📋 PDFService: Generating items HTML for', items.length, 'items with currency:', currency);
+    debugLog('📋 PDFService: Generating items HTML for', items.length, 'items with currency:', currency);
     
     if (!items || items.length === 0) {
-      console.log('⚠️ PDFService: No items to generate');
+      debugLog('⚠️ PDFService: No items to generate');
       return '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #6b7280;">No items</td></tr>';
     }
 
     const html = items.map((item, index) => {
-      console.log(`📦 PDFService: Processing item ${index + 1}:`, {
+      debugLog(`📦 PDFService: Processing item ${index + 1}:`, {
         description: item.description,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -572,7 +608,7 @@ class PDFService {
         </tr>`;
     }).join('');
 
-    console.log('✅ PDFService: Items HTML generated, length:', html.length);
+    debugLog('✅ PDFService: Items HTML generated, length:', html.length);
     return html;
   }
 
@@ -587,16 +623,12 @@ class PDFService {
    * Generate a simplified receipt PDF for B2C transactions (GuestCode)
    */
   async generateReceiptPDF(receiptData, language = 'en') {
-    console.log('🧾 PDFService: Starting receipt PDF generation');
+    debugLog('🧾 PDFService: Starting receipt PDF generation');
 
-    await this.initialize();
-    const page = await this.browser.newPage();
-
-    try {
-      const html = await this.generateReceiptHTML(receiptData, language);
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-
-      const pdf = await page.pdf({
+    const html = await this.generateReceiptHTML(receiptData, language);
+    const pdf = await this.withPage(async (page) => {
+      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+      return page.pdf({
         format: 'A4',
         printBackground: true,
         margin: {
@@ -606,12 +638,10 @@ class PDFService {
           right: '15mm'
         }
       });
+    });
 
-      console.log('✅ PDFService: Receipt PDF generated, size:', pdf.length, 'bytes');
-      return pdf;
-    } finally {
-      await page.close();
-    }
+    debugLog('PDFService: Receipt PDF generated, size:', pdf.length, 'bytes');
+    return pdf;
   }
 
   async generateReceiptHTML(receipt, language = 'en') {
