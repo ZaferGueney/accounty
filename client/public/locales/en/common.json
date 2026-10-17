@@ -289,7 +289,10 @@
       "cancel": "Couldn't cancel the invoice",
       "preview": "Couldn't create the preview",
       "previewEmpty": "The server returned an empty PDF"
-    }
+    },
+    "toastPending": "Saved. The tax provider is still processing the transmission; the status updates shortly.",
+    "lockedTransmitted": "Transmitted to AADE, so it can't be edited. Cancel it and issue a new one to correct it.",
+    "lockedCancelled": "This invoice is cancelled and can't be edited."
   },
   "home": {
     "headline": "Invoicing for Greece, without the paperwork.",
@@ -685,5 +688,55 @@
       "failed": "Failed",
       "cancelled": "Cancelled"
     }
+  },
+  "invoiceList": {
+    "receipts": "Receipts",
+    "receiptsDescription": "Receipts from GuestCode ticket sales",
+    "newInvoice": "New invoice",
+    "summary": "Summary",
+    "yearToDate": "{{year}} so far",
+    "allDocuments": "Invoices and receipts",
+    "issued": "Issued",
+    "paid": "Paid",
+    "overdue": "Overdue",
+    "documentsCount_one": "{{formatted}} document",
+    "documentsCount_other": "{{formatted}} documents",
+    "documentType": "Document type",
+    "loadFailed": "Couldn't load the list",
+    "duplicateFailed": "Couldn't duplicate this invoice",
+    "noMatchesTitle": "Nothing matches these filters",
+    "noMatchesBody": "Try a wider date range or clear the filters.",
+    "noInvoicesTitle": "No invoices yet",
+    "noInvoicesBody": "Create your first invoice; it's saved as a draft until you send it to AADE.",
+    "noReceiptsTitle": "No receipts yet",
+    "noReceiptsBody": "Receipts from GuestCode ticket sales will appear here.",
+    "colNumber": "Number",
+    "colCustomer": "Customer",
+    "colIssued": "Issued",
+    "colDue": "Due",
+    "colStatus": "Status",
+    "colAmount": "Amount",
+    "noCustomer": "No customer",
+    "daysOverdue_one": "{{count}} day overdue",
+    "daysOverdue_other": "{{count}} days overdue",
+    "openAmount": "{{amount}} open",
+    "view": "View",
+    "duplicate": "Duplicate",
+    "invoiceDetails": "Invoice details",
+    "pagination": "Pages",
+    "showingRange": "{{from}}–{{to}} of {{total}}"
+  },
+  "filters": {
+    "button": "Filters",
+    "title": "Filter documents",
+    "status": "Status",
+    "aadeStatus": "AADE status",
+    "any": "Any",
+    "customer": "Customer",
+    "allCustomers": "All customers",
+    "fromDate": "From",
+    "toDate": "To",
+    "apply": "Apply filters",
+    "remove": "Remove filter"
   }
 }

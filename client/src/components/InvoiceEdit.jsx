@@ -49,6 +49,7 @@ const InvoiceEdit = ({ invoiceId, initialData, onClose, onSave, onBusyChange }) 
   // Component state
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState(null);
   const [savingAs, setSavingAs] = useState(null); // 'draft' | 'sent'
   const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState(null); // { title?, message }
@@ -526,6 +527,9 @@ const InvoiceEdit = ({ invoiceId, initialData, onClose, onSave, onBusyChange }) 
 
   const handleSave = async (status = 'draft') => {
     if (inFlight.current.save) return;
+    // After a failed first save the server may already have stored the draft;
+    // later saves update that one instead of creating a second invoice.
+    const targetId = invoiceId || savedId;
     inFlight.current.save = true;
     try {
       setSaving(true);
@@ -548,20 +552,26 @@ const InvoiceEdit = ({ invoiceId, initialData, onClose, onSave, onBusyChange }) 
       };
 
       let response;
-      if (invoiceId) {
-        response = await invoiceAPI.updateInvoice(invoiceId, invoiceData);
+      if (targetId) {
+        response = await invoiceAPI.updateInvoice(targetId, invoiceData);
       } else {
         response = await invoiceAPI.createInvoice(invoiceData);
       }
 
       if (response.data.success) {
-        toast.success(status === 'sent' ? t('editor.toastSent') : t('editor.toastSaved'));
+        if (response.data.pending) {
+          // HTTP 202: the provider (Parochos) is still processing the transmission
+          toast.show(response.data.message || t('editor.toastPending'), 'info', 8000);
+        } else {
+          toast.success(status === 'sent' ? t('editor.toastSent') : t('editor.toastSaved'));
+        }
         if (onSave) onSave(response.data.invoice);
       } else {
         showError(response.data.message || t('errors.generic'), t('editor.errors.saveInvoice'));
       }
     } catch (err) {
       const errorData = err.response?.data;
+      if (!targetId && errorData?.invoice?._id) setSavedId(errorData.invoice._id);
 
       // AADE validation errors come back as a list
       if (errorData?.errors && Array.isArray(errorData.errors)) {
@@ -719,6 +729,8 @@ const InvoiceEdit = ({ invoiceId, initialData, onClose, onSave, onBusyChange }) 
   };
 
   const totals = calculateTotals();
+  // Transmitted or cancelled invoices can't be changed (the server rejects edits)
+  const isLocked = !!invoiceId && (invoice.aadeStatus === 'transmitted' || invoice.status === 'cancelled');
 
   if (loading || settingsLoading) {
     return (
@@ -1511,13 +1523,22 @@ const InvoiceEdit = ({ invoiceId, initialData, onClose, onSave, onBusyChange }) 
       </div>
 
       {/* Actions (sticky to the bottom of the dialog body) */}
-      <div className="sticky bottom-0 z-20 -mx-4 -mb-4 mt-6 flex flex-wrap justify-end gap-2 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:-mb-5 sm:px-6">
+      {/* bottom offset cancels the dialog body's padding so the bar sits flush */}
+      <div className="sticky -bottom-4 z-20 -mx-4 -mb-4 mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur sm:-bottom-5 sm:-mx-6 sm:-mb-5 sm:px-6">
         <Button variant="ghost" onClick={() => onClose && onClose()} disabled={isBusy} className="sm:mr-auto">
-          {t('invoice.cancel')}
+          {isLocked ? t('common.close') : t('invoice.cancel')}
         </Button>
+        {isLocked && (
+          <p className="order-first flex w-full items-center gap-1.5 text-xs text-muted sm:order-none sm:w-auto sm:flex-1">
+            <Icon name="lock" size={14} />
+            {invoice.status === 'cancelled' ? t('editor.lockedCancelled') : t('editor.lockedTransmitted')}
+          </p>
+        )}
         <Button variant="secondary" icon="eye" loading={previewing} onClick={() => handlePreview()}>
           {t('invoice.preview')}
         </Button>
+        {!isLocked && (
+        <>
         <Button
           variant="secondary"
           loading={saving && savingAs === 'draft'}
@@ -1536,6 +1557,8 @@ const InvoiceEdit = ({ invoiceId, initialData, onClose, onSave, onBusyChange }) 
         >
           {saving && savingAs === 'sent' ? t('invoice.saving') : t('invoice.saveAndSend')}
         </Button>
+        </>
+        )}
       </div>
 
       {/* Create customer */}

@@ -1,8 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'next-i18next';
 import { useAuth } from '@/contexts/AuthContext';
-import axios from 'axios';
-import { getApiBaseUrl } from '@/utils/api';
+import api from '@/utils/api';
 import Button from '@/components/ui/Button';
 import Alert from '@/components/ui/Alert';
 import Field from '@/components/ui/Field';
@@ -63,18 +62,6 @@ const AccountSettings = () => {
 
   const [accountTypeData, setAccountTypeData] = useState({
     isAccountant: user?.isAccountant || false
-  });
-
-  const api = axios.create({
-    baseURL: getApiBaseUrl()
-  });
-
-  api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('accounty_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
   });
 
   const setError = (key: FormKey, text?: string) =>

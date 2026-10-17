@@ -289,7 +289,10 @@
       "cancel": "Rechnung konnte nicht storniert werden",
       "preview": "Vorschau konnte nicht erstellt werden",
       "previewEmpty": "Der Server hat ein leeres PDF geliefert"
-    }
+    },
+    "toastPending": "Gespeichert. Der Anbieter verarbeitet die Übermittlung noch; der Status wird in Kürze aktualisiert.",
+    "lockedTransmitted": "An die AADE übermittelt und daher nicht mehr änderbar. Zum Korrigieren stornieren und neu ausstellen.",
+    "lockedCancelled": "Diese Rechnung ist storniert und kann nicht bearbeitet werden."
   },
   "home": {
     "headline": "Rechnungen für Griechenland, ohne Papierkram.",
@@ -685,5 +688,55 @@
       "failed": "Fehlgeschlagen",
       "cancelled": "Storniert"
     }
+  },
+  "invoiceList": {
+    "receipts": "Belege",
+    "receiptsDescription": "Belege aus GuestCode-Ticketverkäufen",
+    "newInvoice": "Neue Rechnung",
+    "summary": "Übersicht",
+    "yearToDate": "{{year}} bis heute",
+    "allDocuments": "Rechnungen und Belege",
+    "issued": "Ausgestellt",
+    "paid": "Bezahlt",
+    "overdue": "Überfällig",
+    "documentsCount_one": "{{formatted}} Dokument",
+    "documentsCount_other": "{{formatted}} Dokumente",
+    "documentType": "Dokumenttyp",
+    "loadFailed": "Liste konnte nicht geladen werden",
+    "duplicateFailed": "Rechnung konnte nicht dupliziert werden",
+    "noMatchesTitle": "Keine Treffer für diese Filter",
+    "noMatchesBody": "Wählen Sie einen größeren Zeitraum oder setzen Sie die Filter zurück.",
+    "noInvoicesTitle": "Noch keine Rechnungen",
+    "noInvoicesBody": "Erstellen Sie Ihre erste Rechnung; sie bleibt ein Entwurf, bis Sie sie an die AADE senden.",
+    "noReceiptsTitle": "Noch keine Belege",
+    "noReceiptsBody": "Belege aus GuestCode-Ticketverkäufen erscheinen hier.",
+    "colNumber": "Nummer",
+    "colCustomer": "Kunde",
+    "colIssued": "Ausgestellt",
+    "colDue": "Fällig",
+    "colStatus": "Status",
+    "colAmount": "Betrag",
+    "noCustomer": "Kein Kunde",
+    "daysOverdue_one": "{{count}} Tag überfällig",
+    "daysOverdue_other": "{{count}} Tage überfällig",
+    "openAmount": "{{amount}} offen",
+    "view": "Ansehen",
+    "duplicate": "Duplizieren",
+    "invoiceDetails": "Rechnungsdetails",
+    "pagination": "Seiten",
+    "showingRange": "{{from}}–{{to}} von {{total}}"
+  },
+  "filters": {
+    "button": "Filter",
+    "title": "Dokumente filtern",
+    "status": "Status",
+    "aadeStatus": "AADE-Status",
+    "any": "Alle",
+    "customer": "Kunde",
+    "allCustomers": "Alle Kunden",
+    "fromDate": "Von",
+    "toDate": "Bis",
+    "apply": "Filter anwenden",
+    "remove": "Filter entfernen"
   }
 }
