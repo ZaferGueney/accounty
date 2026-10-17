@@ -472,15 +472,26 @@ const createInvoice = async (req, res) => {
     autoCreateServicesLater(userId, invoice.invoiceDetails);
     return respondWithInvoice(res, invoice._id, result);
   } catch (error) {
-    console.error('Create invoice error:', error);
-    // A concurrent duplicate of the same request (same Idempotency-Key)
+    // A concurrent duplicate of the same request (same Idempotency-Key): the
+    // other request created the invoice a moment ago - continue with it.
     if (error.code === 11000 && error.keyPattern?.idempotencyKey) {
+      try {
+        const key = req.get('Idempotency-Key');
+        const existing = await Invoice.findOne({ userId: req.user.userId, idempotencyKey: key });
+        if (existing) {
+          const settings = await Settings.findOne({ userId: req.user.userId });
+          return await continueExistingInvoice(req, res, existing, sanitizeInvoiceInput(req.body), settings, { replay: true });
+        }
+      } catch (retryError) {
+        console.error('Create invoice (duplicate request) error:', retryError.message);
+      }
       return res.status(409).json({
         success: false,
         code: 'DUPLICATE_REQUEST',
         message: 'This invoice is already being saved. Please wait a moment and refresh.'
       });
     }
+    console.error('Create invoice error:', error);
     res.status(error.name === 'ValidationError' || error.name === 'CastError' ? 400 : 500).json({
       success: false,
       message: 'Failed to create invoice',
