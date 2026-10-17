@@ -79,7 +79,7 @@ const kadSchema = new mongoose.Schema({
 });
 
 // Indexes for efficient searching
-kadSchema.index({ code: 1 });
+// code is already indexed by its `unique: true`.
 kadSchema.index({ originalCode: 1 });
 kadSchema.index({ category: 1 });
 kadSchema.index({ section: 1 });

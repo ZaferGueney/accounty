@@ -497,6 +497,19 @@ const invoiceSchema = new mongoose.Schema({
     ref: 'Invoice'
   }],
 
+  // Client-supplied Idempotency-Key of the create request: a retried create
+  // (timeout, double click) returns this invoice instead of a second one.
+  idempotencyKey: {
+    type: String,
+    default: undefined
+  },
+  // Set while the invoice is being transmitted to myDATA / the provider, so
+  // two concurrent "send" requests can never both submit it.
+  sendLockedAt: {
+    type: Date,
+    default: undefined
+  },
+
   // Audit Trail
   modifications: [{
     date: {
@@ -526,8 +539,11 @@ invoiceSchema.index({ userId: 1, clientId: 1 });
 invoiceSchema.index({ userId: 1, customerId: 1 });
 invoiceSchema.index({ userId: 1, status: 1 });
 invoiceSchema.index({ userId: 1, aadeStatus: 1 });
-invoiceSchema.index({ 'aadeInfo.mark': 1 });
-invoiceSchema.index({ 'aadeInfo.uid': 1 });
+// aadeInfo.mark / aadeInfo.uid are already indexed by their `unique: true`.
+invoiceSchema.index(
+  { userId: 1, idempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } }
+);
 invoiceSchema.index({ issueDate: 1 });
 invoiceSchema.index({ dueDate: 1 });
 
@@ -560,8 +576,14 @@ invoiceSchema.pre('save', function(next) {
   let totalDeductionsAmount = 0;
 
   this.invoiceDetails.forEach(line => {
-    totalNetValue += line.netValue;
-    totalVatAmount += line.vatAmount;
+    // A single income classification always covers the whole line. Keep its
+    // amount in sync with the line net value (duplicated/edited invoices used
+    // to carry amount 0 or a stale amount into myDATA).
+    if (Array.isArray(line.incomeClassification) && line.incomeClassification.length === 1) {
+      line.incomeClassification[0].amount = Math.round((Number(line.netValue) || 0) * 100) / 100;
+    }
+    totalNetValue += line.netValue || 0;
+    totalVatAmount += line.vatAmount || 0;
     totalWithheldAmount += line.withheldAmount || 0;
     totalFeesAmount += line.feesAmount || 0;
     totalOtherTaxesAmount += line.otherTaxesAmount || 0;
@@ -588,25 +610,42 @@ invoiceSchema.pre('save', function(next) {
   next();
 });
 
-// Static method to generate next invoice number
+// Static method to generate next invoice number (per user and series).
+// Compares numerically, so A9999 -> A10000 keeps counting.
 invoiceSchema.statics.generateInvoiceNumber = async function(userId, series = 'A') {
-  // Find the highest invoice number for this user and series (no year)
-  const lastInvoice = await this.findOne({
-    userId,
-    series,
-    invoiceNumber: new RegExp(`^${series}\\d+$`) // Match series + any digits (A0001, A000001, etc.)
-  }).sort({ invoiceNumber: -1 });
+  const escaped = String(series).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const uid = mongoose.isValidObjectId(userId) ? new mongoose.Types.ObjectId(String(userId)) : userId;
+  const [last] = await this.aggregate([
+    { $match: { userId: uid, series, invoiceNumber: { $regex: `^${escaped}\\d+$` } } },
+    { $project: { n: { $toLong: { $substrCP: ['$invoiceNumber', series.length, 30] } } } },
+    { $sort: { n: -1 } },
+    { $limit: 1 }
+  ]);
 
-  let nextNumber = 1;
-  if (lastInvoice) {
-    // Extract number after series (e.g., "A0001" -> "0001" -> 1)
-    const lastNumber = parseInt(lastInvoice.invoiceNumber.replace(series, ''));
-    nextNumber = lastNumber + 1;
-  }
+  const nextNumber = last ? Number(last.n) + 1 : 1;
 
   // Conditional padding: Receipts (R) use 6 digits, Invoices (A, etc.) use 4 digits
   const padLength = series === 'R' ? 6 : 4;
   return `${series}${nextNumber.toString().padStart(padLength, '0')}`;
+};
+
+const isDuplicateNumberError = (err) =>
+  err && err.code === 11000 && (err.keyPattern?.invoiceNumber || /invoiceNumber/.test(err.message || ''));
+
+// Create an invoice with the next free number. Two saves at the same moment
+// used to get the same number and one failed on the unique index; now the
+// loser simply takes the following number.
+invoiceSchema.statics.createWithNextNumber = async function(doc, { attempts = 6 } = {}) {
+  const series = doc.series || 'A';
+  for (let attempt = 1; ; attempt++) {
+    const invoiceNumber = await this.generateInvoiceNumber(doc.userId, series);
+    try {
+      return await this.create({ ...doc, series, invoiceNumber });
+    } catch (err) {
+      if (isDuplicateNumberError(err) && attempt < attempts) continue;
+      throw err;
+    }
+  }
 };
 
 // Static method to find invoices by user
@@ -634,10 +673,20 @@ invoiceSchema.statics.getOverdueInvoices = function(userId) {
 
 // Static method to get revenue statistics
 invoiceSchema.statics.getRevenueStats = async function(userId, startDate, endDate) {
+  // "Overdue" is computed from the due date: the stored status only flips to
+  // 'overdue' when a document happens to be saved again, so most past-due
+  // invoices still said 'sent' and the dashboard showed "Overdue 1".
+  const now = new Date();
+  const isOverdue = {
+    $and: [
+      { $in: ['$status', ['sent', 'overdue']] },
+      { $lt: ['$dueDate', now] }
+    ]
+  };
   const pipeline = [
     {
       $match: {
-        userId: new mongoose.Types.ObjectId(userId),
+        userId: new mongoose.Types.ObjectId(String(userId)),
         status: { $ne: 'cancelled' },
         issueDate: { $gte: startDate, $lte: endDate }
       }
@@ -654,10 +703,10 @@ invoiceSchema.statics.getRevenueStats = async function(userId, startDate, endDat
           $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$totals.totalAmount', 0] }
         },
         overdueInvoices: {
-          $sum: { $cond: [{ $eq: ['$status', 'overdue'] }, 1, 0] }
+          $sum: { $cond: [isOverdue, 1, 0] }
         },
         overdueRevenue: {
-          $sum: { $cond: [{ $eq: ['$status', 'overdue'] }, '$totals.totalAmount', 0] }
+          $sum: { $cond: [isOverdue, '$totals.totalAmount', 0] }
         }
       }
     }

@@ -223,7 +223,7 @@ const clientSchema = new mongoose.Schema({
 // Indexes for efficient querying
 clientSchema.index({ accountant: 1, companyName: 1 });
 clientSchema.index({ accountant: 1, isActive: 1 });
-clientSchema.index({ 'taxInfo.afm': 1 });
+// taxInfo.afm is already indexed by its `unique: true`.
 clientSchema.index({ email: 1 });
 clientSchema.index({ 'contractInfo.serviceType': 1 });
 
